@@ -1,0 +1,327 @@
+---
+title: "data_viz"
+format: html
+---
+
+## Load & Wrangle Data 
+```{r}
+# Load data 
+east_as <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/se_as_basin_df.rds")
+east_as <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1//raf_presentation_df.rds")
+east_as_basin_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_as_lev02_v1c/hybas_as_lev02_v1c.shp") |>
+  janitor::clean_names() %>% 
+  filter(hybas_id == 4020015090) %>% 
+  st_transform(crs = 4326)
+
+# Fix dam_id 
+future_dams_flagged$dam_id <- as.character(future_dams_flagged$dam_id)
+
+# Join PA with dam data 
+east_as_pa <- left_join(east_as, future_dams_flagged, by = 'dam_id')
+
+# Fix the Data 
+east_as_pa <- east_as_pa %>%
+  mutate(connectivity_category = case_when(
+    # (1) Both within 250km
+    cascade_level == 1 ~ "cascade1",
+    cascade_level == 2 ~ "cascade2",
+    cascade_level >= 3 ~ "cascade3+",
+    # (2) No dams in either direction OR both further than 200km
+    (is.na(min_distance_upstream_km) | min_distance_upstream_km > 70) &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 70) ~ "FFR",
+    # (3) Upstream dam within 200km, no downstream or downstream > 200km
+    min_distance_upstream_km <= 70 &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 70) ~ "downstream",
+    # (4) Downstream dam within 200km, no upstream or upstream > 200km
+    min_distance_downstream_km <= 70 &
+      (is.na(min_distance_upstream_km) | min_distance_upstream_km > 70) ~ "upstream",
+    TRUE ~ NA
+  )) %>% 
+  mutate(connectivity_category_num = case_when(
+    connectivity_category == "cascade1" ~ 7, 
+    connectivity_category == "cascade2" ~ 5, 
+    connectivity_category == "cascade3+" ~ 5, 
+    connectivity_category == "upstream" ~ 3,
+    connectivity_category == "downstream" ~ 3,
+    connectivity_category == "FFR" ~ 1,
+  )) %>% 
+  mutate(in_pa_num = ifelse(in_protected_area == FALSE, 1, 0)) %>%  # 1 = No in PA (good)
+  #st_drop_geometry() %>% 
+  filter(dam_type == "future")
+  
+
+# Add lat and long columns for leaflet map 
+east_as_pa %>% 
+  mutate(long = st_coordinates(east_as_pa$geometry)[,1], 
+         lat = st_coordinates(east_as_pa$geometry)[,2])
+```
+
+## Run the function 
+```{r}
+criteria <- c('csi', 'connectivity_category_num', 'in_pa_num')
+
+criteria_weights <- c(csi = 0.4, connectivity_category_num = 0.4, in_pa_num = 0.2)
+
+criteria_type <- c(csi = "nonbeneficial", # Lower number = better 
+                       connectivity_category_num = "beneficial", # Higher number = better 
+                       in_pa_num = "beneficial")
+
+
+results <- wsm_model(dataset = east_as_pa, 
+     criteria = criteria, 
+     criteria_weights = criteria_weights, 
+     criteria_type = criteria_type)
+
+results
+
+
+```
+
+## Look at results
+
+```{r}
+# Create a weight label 
+weight_label = paste0(names(criteria_weights), ": ", criteria_weights)
+weight_label <- paste(weight_label, collapse = "\n")
+weight_label <- paste0("<b>", "Criteria Weights:\n", "</b><br>", weight_label)
+
+# Create a color palletes 
+connectivity_cat_pal <- c("Cascade1" = "#015A00",
+                          "Cascade2" = "#37C04F",
+                          "Cascade3+" = "#7FFF95",
+                          "Upstream" = "#F8E733",
+                          "Downstream" = "#FFA946",
+                          "FFR" = "#e83d00")
+
+```
+
+AT **CSI** distribution 
+```{r}
+# Look at CSI 
+csi_hist <- ggplot(results) + 
+  geom_histogram(aes(csi), fill = "mediumseagreen") + 
+  theme_light() + 
+  labs(
+    title = "Future Dam Connectivity Status Index (CSI) in Southeast Asia", 
+    x = "Connectivity Status Index", 
+    y = "Count"
+  )
+csi_hist
+# ggsave(file.path("plots", "csi_hist.png"), 
+#        plot = csi_hist, 
+#        height = 5, 
+#        width = 6)
+```
+
+Look at **Scores** 
+
+Density plot of just the scores 
+```{r}
+# Density plot of just the scores 
+wsm_density <- ggplot(results) + 
+  geom_density(aes(wsm_scores), color = "firebrick") + 
+  theme_light() + 
+  labs(title = "MCDA: Weighted Sum Model (WSM) Scores for Future Dams in Southeast Asia", 
+       x = "WSM Scores", 
+       y = "Density")
+
+wsm_density
+
+# ggsave(filename = here::here("plots", "wms_density.pdf"), # Will created directory if not already there 
+#   plot = wsm_density, 
+#   height = 5, 
+#   width = 5)
+# 
+```
+
+histogram of SWM Scores in correspondence to connectivity category 
+```{r}
+# histogram of SWM Scores in correspondence to connectivity category 
+# Make connectivity_category a factor 
+results$connectivity_category <- factor(results$connectivity_category, levels = c("cascade1","cascade2", "cascade3+", "upstream", "downstream", "FFR"), labels = c("Cascade1","Cascade2", "Cascade3+", "Upstream", "Downstream", "FFR"))
+
+# PLot 
+wsm_hist_cat <- results %>% 
+  #filter(connectivity_category == "cascade") %>% 
+  ggplot() +
+  geom_histogram(aes(wsm_scores, fill = connectivity_category)) + 
+  theme_light() + 
+  scale_fill_manual(values = connectivity_cat_pal) +
+  labs(title = "Weight Sum Model (WSM) Scrores\nof Southeast Asia Future Dams", 
+       x = "WSM Scores", 
+       y = "Count", 
+       fill = "Connectivity Catagory", 
+       caption = weight_label) 
+
+wsm_hist_cat
+
+# ggsave(filename = here::here("plots","wms_hist_cat.png"), # Will created directory if not already there
+#   plot = wsm_hist_cat,
+#   height = 5,
+#   width = 7)
+
+```
+
+Lets Look at it **Spatially**! 
+Prep 
+```{r}
+library(tmap)
+library(sf)
+
+# Make it sf and 
+results_sf <- st_as_sf(results, crs = 4326)
+
+# Check CRS 
+st_crs(results_sf) == st_crs(east_as_basin_sf)
+results_sf <- st_set_crs(results_sf, 4326) 
+```
+
+Interactive GGplot
+```{r}
+# Plot 
+# GGplot 
+wms_ggmap <- ggplot() +
+  geom_sf(data = east_as_basin_sf, fill = NA, color = "black", alpha = 0.5) +
+  geom_sf(data = results_sf, aes(color = wsm_scores, 
+                                 text = paste0(
+      "<b>Dam_ID: ", dam_id, "</b><br>", 
+      "<b>CSI: </b>", csi, "<br>", 
+      "<b>Connectivity Category: </b>", connectivity_category, "<br>", 
+      "<b>In a PA: </b>", in_protected_area
+    ))) +
+  scale_color_gradientn(
+    colors = colorRampPalette(c("#0f31bc", "#77d613", "orange"))(100),
+    name = "WSM Scores"
+  ) +
+  #theme_minimal() + 
+  theme_void() + 
+  labs(title = "Weighted Sum Model Scores for Future Dams in Southeast Asia") + 
+  annotate(geom = "text", x = 115, y = 5, label = weight_label, size = 2, hjust = 0)
+
+wms_ggmap_interactive <- ggplotly(wms_ggmap, 
+         tooltip = "text" # inside of hover tool tip
+         )
+
+wms_ggmap_interactive
+
+# htmlwidgets::saveWidget(
+#   ggplotly(wms_ggmap_interactive, tooltip = "text"),
+#   file = here::here("plots", "wms_ggmap_interactive3.html")
+# )
+
+```
+
+Leaflet 
+```{r}
+library(leaflet)
+
+leaflet() %>% 
+  addProviderTiles(providers$Esri.WorldImagery) %>%
+  setView(lng = 108, lat = 20, zoom = 3) %>% 
+  # Add Markers
+  addMarkers(data = results_sf, 
+             lng = results_sf$Longitude, 
+             lat = results_sf$Latitude, 
+             popup = paste0(
+              "Dam_ID: ", results_sf$dam_id, "<br>", 
+              "Connectivity Category: ", results_sf$connectivity_category, "<br>", 
+              "CSI: ", results_sf$csi, "<br>", 
+              "In Protected Area: ", results_sf$in_protected_area, " °C", 
+              "Capacity: ", 
+             )) 
+
+  
+```
+
+
+Tmap
+```{r}
+# TMAP
+wms_map <- tm_shape(east_as_basin_sf) +
+  tm_polygons(fill_alpha = 0.1) + 
+  tm_shape(results_sf) +
+  tm_dots(
+    #fill_alpha = 0.8,
+    fill = "wsm_scores", 
+    fill.legend = tm_legend(title = "WSM Scores"), 
+    fill.scale = tm_scale_continuous(
+      #values = "viridis"
+      values = colorRampPalette(c("#0f31bc", "#77d613", "orange"))(100)
+      #values = RColorBrewer::brewer.pal(9, "Viridis"),
+      #values = "scico.roma", midpoint = 30
+          ),
+    col = "black", 
+    size = 0.4
+    ) + 
+  #tm_credits("DAMS", position = tm_pos_out("right", "bottom") ) +
+  tm_scalebar(position = c("left", "bottom"))+ 
+  tm_compass(position = c("right", "top")) 
+
+wms_map
+
+# tmap_save(
+#   filename = here::here("wms_map.pdf"), # Will created directory if not already there 
+#   tm = wms_map)
+```
+
+Look at **Lettering** 
+Box plot
+```{r}
+# Boxplot
+ggplot(results) + 
+  geom_boxplot(aes(x = wsm_scores, y = score_letter), color = "firebrick") + 
+  theme_light() + 
+  labs()
+
+```
+ 
+Table 
+```{r}
+# TABLES 
+# Score summaries 
+results %>% 
+  group_by(score_letter) %>% 
+  summarise(count = n(), 
+            avg_scores = mean(wsm_scores, na.rm = TRUE), 
+            max_scores = max(wsm_scores, na.rm = TRUE), 
+            min_scores = min(wsm_scores, na.rm = TRUE), 
+            median_scores = median(wsm_scores, na.rm = TRUE), 
+            avg_csi = mean(csi, na.rm = TRUE)) %>% 
+  kableExtra::kbl(digits = 3) %>% 
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+```
+
+# Interactive map for connectivity catagories 
+
+```{r}
+
+# Plot 
+# GGplot 
+wms_ggmap_cat <- ggplot() +
+  geom_sf(data = east_as_basin_sf, fill = NA, color = "black", alpha = 0.5) +
+  geom_sf(data = results_sf, aes(color = connectivity_category_num, 
+                                 text = paste0(
+      "<b>Dam_ID: ", dam_id, "</b><br>", 
+      "<b>CSI: </b>", csi, "<br>", 
+      "<b>Connectivity Category: </b>", connectivity_category_num, "<br>", 
+      "<b>In a PA: </b>", in_protected_area, "<br>",
+      "<b>Capacity: </b>", capacity_mw, "mw"
+    )), alpha = 0.7) +
+  #scale_color_gradientn(
+    #colors = colorRampPalette(c("#0f31bc", "#77d613", "orange"))(100),
+    #name = "WSM Scores") 
+  scale_color_manual(values = c("#CE5334", "#FFA53D", "#F8E733", "#14C96D", "#88CCF1", "#3700B8"))+
+  #theme_minimal() + 
+  theme_void() + 
+  labs(title = "Connectivity Catagories for Future Dams in Southeast Asia", 
+       color = "Connectivity Catagories")
+
+con_cat_ggmap_interactive <- ggplotly(wms_ggmap_cat, 
+         tooltip = "text" # inside of hover tool tip
+         )
+
+con_cat_ggmap_interactive
+
+```
+ 

@@ -1,0 +1,132 @@
+---
+title: "sensitivity-testing"
+format: html
+---
+
+### GOAL: See how the dam scores vary with different weights. 
+
+```{r}
+source(here::here("wsm_model.R"))
+```
+
+## Load and Wrangle Data 
+```{r}
+# Load data 
+east_as <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/se_as_basin_df.rds")
+east_as <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1//raf_presentation_df.rds")
+east_as_basin_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_as_lev02_v1c/hybas_as_lev02_v1c.shp") |>
+  janitor::clean_names() %>% 
+  filter(hybas_id == 4020015090) %>% 
+  st_transform(crs = 4326)
+
+east_as_network <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nets_with_dams/net_hybas4020015090_Asia_pfaf02.rds")
+
+# Fix dam_id 
+future_dams_flagged$dam_id <- as.character(future_dams_flagged$dam_id)
+
+# Join PA with dam data 
+east_as_pa <- left_join(east_as, future_dams_flagged, by = 'dam_id')
+
+# Fix the Data 
+east_as_pa <- east_as_pa %>%
+  mutate(connectivity_category = case_when(
+    # (1) Both within 250km
+    cascade_level == 1 ~ "cascade1",
+    cascade_level == 2 ~ "cascade2",
+    cascade_level >= 3 ~ "cascade3+",
+    # (2) No dams in either direction OR both further than 200km
+    (is.na(min_distance_upstream_km) | min_distance_upstream_km > 70) &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 70) ~ "FFR",
+    # (3) Upstream dam within 200km, no downstream or downstream > 200km
+    min_distance_upstream_km <= 70 &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 70) ~ "downstream",
+    # (4) Downstream dam within 200km, no upstream or upstream > 200km
+    min_distance_downstream_km <= 70 &
+      (is.na(min_distance_upstream_km) | min_distance_upstream_km > 70) ~ "upstream",
+    TRUE ~ NA
+  )) %>% 
+  mutate(connectivity_category_num = case_when(
+    connectivity_category == "cascade1" ~ 7, 
+    connectivity_category == "cascade2" ~ 5, 
+    connectivity_category == "cascade3+" ~ 5, 
+    connectivity_category == "upstream" ~ 3,
+    connectivity_category == "downstream" ~ 3,
+    connectivity_category == "FFR" ~ 1,
+  )) %>% 
+  mutate(in_pa_num = ifelse(in_protected_area == FALSE, 1, 0)) %>% # 1 = No in PA (good)
+  #st_drop_geometry() %>% 
+  filter(dam_type == "future")
+  
+
+```
+
+## Generate Random Weights for the criteria - where each row = 1 
+
+Think of it like randomly throwing 2 points on a line from 0 to 1 (for 3 criteria), then measuring the 3 gap sizes — they'll always sum to 1.
+```{r}
+
+n_simulations <- 1000
+n_criteria <- length(criteria)
+
+# EMPTY MATRIX: one row per simulation, one column per criteria 
+weight_samples <- matrix(NA, nrow = n_simulations, ncol = n_criteria)
+colnames(weight_samples) <- criteria
+
+
+# FILL MATRIX: with weights - each row = 1 
+for (i in 1:n_simulations) {
+  w <- diff(c(0, sort(runif(n_criteria - 1)), 1)) # draw (n_criteria - 1) random numbers between 0 and 1  
+  weight_samples[i, ] <- w # Find the distance between the (n_criteria - 1) random numbers = random weights 
+}
+
+# Make the matrix a list of each criteria combo 
+weight_samples_list <- lapply(1:nrow(weight_samples), # Create list from 1 to # of rows in weight_samples 
+                               function(i) weight_samples[i, ] )# Function that pulls row by row
+
+```
+
+## Run samples for the dataset over the differing weights 
+```{r}
+
+criteria <- c('csi', 'connectivity_category_num', 'in_pa_num')
+
+criteria_type <- c(csi = "nonbeneficial", # Lower number = better 
+                       connectivity_category_num = "beneficial", # Higher number = better 
+                       in_pa_num = "beneficial")
+
+# Run the function over the varying weights - THIS IS WHERE I STOPPED... have results but they are in crazy fromat.
+score_results <- map(.x = weight_samples_list, ~{
+  wsm_model(
+    dataset = east_as_pa, 
+    criteria = criteria, 
+    criteria_weights = .x, # Varying
+    criteria_type = criteria_type
+  )}
+    ) 
+#%>% bind_cols() %>% # Bind multiple dataframes by column 
+  #as.matrix()
+
+score_results %>% as.matrix()
+
+class(score_results
+      )
+
+score_results$wsm
+```
+
+## Looking at Results 
+```{r}
+results$score_mean <- rowMeans(scores_matrix)
+results$score_sd   <- apply(scores_matrix, 1, sd)
+results$score_min  <- apply(scores_matrix, 1, min)
+results$score_max  <- apply(scores_matrix, 1, max)
+
+east_as_pa %>% 
+  select(dam_id) %>% 
+  mutate(score_mean = rowMeans(score_results), 
+         median = apply(score_results))
+
+```
+
+
+
