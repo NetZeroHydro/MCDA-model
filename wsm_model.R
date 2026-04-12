@@ -13,24 +13,34 @@
 # Inline comments: plain-language walkthrough for explaining to a team what each
 # step does and why.
 # =============================================================================
-
-#' Weighted Sum Model Summary for the dam analysis 
+#' Weighted Sum Model (WSM) for Dam Prioritization
 #'
-#' Rows represent observations and columns represent numeric criteria in the given dataframe.
-#' With this dataset and per criterion weights, the function scores each dam by by applying min-max normalization to each criterion, then computing the weighted sum per row.
-#'  
-#' @md
+#' Scores and ranks alternatives using a Weighted Sum Model (WSM). Each criterion
+#' is Min-Max normalized according to its type, multiplied by its assigned weight,
+#' and summed to produce a composite score for each observation.
 #'
-#' @param dataset The dataset must have individual dams per row and numeric criteria in the columns. 
-#' @param criteria 
-#' @param criteria_weights
-#' @param criteria_type
+#' @param dataset A dataframe containing the alternatives to be scored.
+#' @param criteria A character vector of column names in \code{dataset} to use as criteria.
+#' @param criteria_weights A named numeric vector of weights for each criterion. Must sum to 1.
+#' @param criteria_type A named list indicating the type of each criterion.
+#'   Accepted values are \code{"beneficial"} (higher values indicate better outcomes)
+#'   or \code{"non-beneficial"} (lower values are preferable).
 #'
-#' @return 
-#'
-#' @details 
+#' @return The input \code{dataset} with two additional columns:
+#'   \describe{
+#'     \item{wsm_scores}{A numeric composite score between 0 and 1 for each observation.}
+#'     \item{score_letter}{A letter grade (A–D) based on fixed score thresholds:
+#'       A (> 0.75), B (0.50–0.75), C (0.25–0.50), D (0–0.25).}
+#'   }
 #'
 #' @examples
+#' wsm_model(
+#'   dataset = future_dams,
+#'   criteria = c("csi", "n_protected_areas", "distance_downstream"),
+#'   criteria_weights = c(csi = 0.5, n_protected_areas = 0.3, distance_downstream = 0.2),
+#'   criteria_type = list(csi = "beneficial", n_protected_areas = "non-beneficial",
+#'                        distance_downstream = "beneficial")
+#' )
 
 
 wsm_model <- function(dataset, criteria, criteria_weights, criteria_type) {
