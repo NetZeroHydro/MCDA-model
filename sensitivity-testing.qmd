@@ -3,13 +3,14 @@ title: "sensitivity-testing"
 format: html
 ---
 
-### GOAL: See how the dam scores vary with different weights. 
+### GOAL: See how the dam scores vary with different weights.
 
 ```{r}
 source(here::here("wsm_model.R"))
 ```
 
-## Load and Wrangle Data 
+## Load and Wrangle Data
+
 ```{r}
 # Load data 
 east_as <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/se_as_basin_df.rds")
@@ -60,12 +61,13 @@ east_as_pa <- east_as_pa %>%
 
 ```
 
-## Generate Random Weights for the criteria - where each row = 1 
+## Generate Random Weights for the criteria - where each row = 1
 
 Think of it like randomly throwing 2 points on a line from 0 to 1 (for 3 criteria), then measuring the 3 gap sizes — they'll always sum to 1.
+
 ```{r}
 
-n_simulations <- 1000
+n_simulations <- 198
 n_criteria <- length(criteria)
 
 # EMPTY MATRIX: one row per simulation, one column per criteria 
@@ -85,7 +87,8 @@ weight_samples_list <- lapply(1:nrow(weight_samples), # Create list from 1 to # 
 
 ```
 
-## Run samples for the dataset over the differing weights 
+## Run samples for the dataset over the differing weights
+
 ```{r}
 
 criteria <- c('csi', 'connectivity_category_num', 'in_pa_num')
@@ -94,7 +97,7 @@ criteria_type <- c(csi = "nonbeneficial", # Lower number = better
                        connectivity_category_num = "beneficial", # Higher number = better 
                        in_pa_num = "beneficial")
 
-# Run the function over the varying weights - THIS IS WHERE I STOPPED... have results but they are in crazy fromat.
+# Run the function over the varying weights 
 score_results <- map(.x = weight_samples_list, ~{
   wsm_model(
     dataset = east_as_pa, 
@@ -102,31 +105,83 @@ score_results <- map(.x = weight_samples_list, ~{
     criteria_weights = .x, # Varying
     criteria_type = criteria_type
   )}
-    ) 
-#%>% bind_cols() %>% # Bind multiple dataframes by column 
-  #as.matrix()
+    ) %>% bind_cols() # Bind multiple dataframes by column 
 
-score_results %>% as.matrix()
 
-class(score_results
-      )
-
-score_results$wsm
+score_results
 ```
 
-## Looking at Results 
 ```{r}
-results$score_mean <- rowMeans(scores_matrix)
-results$score_sd   <- apply(scores_matrix, 1, sd)
-results$score_min  <- apply(scores_matrix, 1, min)
-results$score_max  <- apply(scores_matrix, 1, max)
+# Filter for dam #1 
+dam_filter <- score_results 
 
-east_as_pa %>% 
-  select(dam_id) %>% 
-  mutate(score_mean = rowMeans(score_results), 
-         median = apply(score_results))
+dam_pivot <- dam_filter %>%
+  pivot_longer(
+    cols = matches("wsm_scores"),
+    names_to = "wsm_score",  # was `names =`, which is wrong
+    values_to = "value"
+  )
 
+dam_pivot_select <- dam_pivot %>% 
+  select(c(dam_id...1, wsm_score, value))
+
+dam_wsm_sum <- dam_pivot_select %>%
+  group_by(dam_id...1) %>% 
+  summarise(
+    maxWSM = max(value), 
+    minWSM = min(value), 
+    avgWSM = mean(value), 
+    sdWSM = sd(value)
+  ) 
+
+dam_wsm_sum
 ```
 
+```{r}
+criteria <- c('csi', 'connectivity_category_num', 'in_pa_num')
 
+criteria_type <- list(
+  csi = "non-beneficial",
+  connectivity_category_num = "beneficial",
+  in_pa_num = "beneficial"
+)
 
+# Run simulations, keeping only wsm_scores per run
+score_results <- map(weight_samples_list, \(w) {
+  wsm_model(
+    dataset = east_as_pa,
+    criteria = criteria,
+    criteria_weights = w,
+    criteria_type = criteria_type
+  )$wsm_scores  # Pull scores only
+}) %>%
+  bind_cols() %>%   # Each col = one simulation
+  setNames(paste0("sim_", 1:n_simulations)) # Col names to simulation # 
+
+# Add dam ID for reference
+score_results <- bind_cols( # Glues dam col from east_as_pa to score_results horizontally.
+  east_as_pa %>% select(dam_id), 
+  score_results
+)
+
+score_summary <- score_results %>%
+  rowwise() %>% # Work within a row 
+  mutate(
+    mean_score = mean(c_across(starts_with("sim_"))), # Find mean with all columns that start with 'sim_'
+    sd_score   = sd(c_across(starts_with("sim_"))), # Find sd with all columns that start with 'sim_'
+    cv         = sd_score / mean_score # coefficient of variation — high CV = weight-sensitive
+  ) %>% 
+    arrange(desc(cv)) %>% 
+  select(c(dam_id, mean_score, sd_score, cv))
+```
+
+**All dams are showing very sensitive to weights!**
+
+The only dam showing lower senstivity is:
+
+```{r}
+score_summary %>% 
+  filter(cv <= 0.30)
+
+east_as_pa %>% filter(dam_id == "1969")
+```
