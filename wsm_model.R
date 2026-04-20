@@ -24,7 +24,7 @@
 #' @param criteria_weights A named numeric vector of weights for each criterion. Must sum to 1.
 #' @param criteria_type A named list indicating the type of each criterion.
 #'   Accepted values are \code{"beneficial"} (higher values indicate better outcomes)
-#'   or \code{"non-beneficial"} (lower values are preferable).
+#'   or \code{"nonbeneficial"} (lower values are preferable).
 #'
 #' @return The input \code{dataset} with two additional columns:
 #'   \describe{
