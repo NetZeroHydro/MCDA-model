@@ -2,7 +2,7 @@
 title: "wsm_model_testing"
 format: html
 ---
-
+**Hopely can delete because of wsm_modelS_testing**
 ## Fake dataset 
 
 Building a fake dataset that I can predict the outcomes 
@@ -171,7 +171,7 @@ Lucian's new cascade level data = `raf_data`
 # Load data 
 raf_data <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/raf_presentation_df.rds")
 
-east_as_basin_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_as_lev02_v1c/hybas_as_lev02_v1c.shp") |>
+east_as_basin_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev2/hybas_as_lev02_v1c/hybas_as_lev02_v1c.shp") |>
   janitor::clean_names() %>% 
   filter(hybas_id == 4020015090) %>% 
   st_transform(crs = 4326)

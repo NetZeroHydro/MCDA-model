@@ -1,0 +1,333 @@
+---
+title: "wsm_modelS_testing"
+format: html
+---
+
+```{r}
+#| output: false 
+source(here::here("wsm_model_zscore.R"))
+source(here::here("wsm_model_MinMax.R"))
+library(dplyr)
+library(tidyverse)
+library(sf)
+library(ggplot2)
+library(plotly)
+```
+
+
+## Fake dataset 
+
+Building a fake dataset that I can predict the outcomes 
+```{r}
+dam_df <- data.frame(
+  dam_id = c("2001", "2002", "2003", "2004", "2005", "2006", "2007", "2008", "2009", "2010"), 
+  bb_id = c(1, 1, 1, 2, 2, 2, 3, 3, 4, 4), # trunk id 
+  min_distance_upstream_km = c(NA, 10, 30, NA, 3, NA, 30, 200, NA, 2),  
+  min_distance_downstream_km = c(20, 10, NA, NA, 15, 30, 100, 10, NA, 14), 
+  # connectivity indexes 
+  cascade_status = c(0,1,0,NA,1,0,0,0,NA,1), 
+  csi = c(0.40, 0.10, 0.22, 0.90, 0.12, 0.25, 0.81, 0.70, 0.95, 0.07),
+  # fatal flaws 
+  in_protected_area = c(0,1,1,0,0,1,1,1,0,0) # CHANGED to have 1 = good (no PA) and 0 = bad (inside PA)... WAS c(1,0,0,1,1,0,0,0,1,1) 
+)
+
+
+# upsteam, downstream, cascade 
+dam_df <- dam_df %>% 
+  mutate(connectivity_category = case_when(
+    min_distance_upstream_km <= 15 & min_distance_downstream_km <= 15 ~ "cascade", 
+    is.na(min_distance_upstream_km) & is.na(min_distance_downstream_km) ~ "FFR",
+    is.na(min_distance_upstream_km) & min_distance_downstream_km <= 50 | 
+      min_distance_upstream_km > 50 & min_distance_downstream_km <= 50 ~ "upstream", 
+    min_distance_upstream_km <= 50 & is.na(min_distance_downstream_km) | 
+      min_distance_upstream_km <= 50 & min_distance_downstream_km > 50 ~ "downstream", 
+    TRUE ~ NA
+  ))
+
+
+# Change the connectivity_category to numbers 
+dam_df <- dam_df %>% 
+  mutate(connectivity_category_num  = case_when(
+    connectivity_category == "cascade" ~ 5, 
+    connectivity_category == "upstream" ~ 3, 
+    connectivity_category == "downstream" ~ 3, 
+    connectivity_category == "ffr" ~ 1, 
+    TRUE ~ 1
+    ))
+
+
+dam_df
+
+```
+
+Trying function on fake data 
+
+```{r}
+
+criteria <- c("csi", "connectivity_category_num", "in_protected_area")
+
+criteria_weights <- c(csi = 0.5, connectivity_category_num = 0.3, in_protected_area = 0.2)
+
+criteria_type <- c(csi = "nonbeneficial", connectivity_category_num = "beneficial", in_protected_area = "beneficial")
+
+# Min Max WSM 
+wsm_MinMax_results <- wsm_model_MinMax(dataset = dam_df, 
+     criteria = criteria, 
+     criteria_weights = criteria_weights, 
+     criteria_type = criteria_type)
+
+# Z score WSM 
+wsm_Zscore_results <-  wsm_model_zscore(dataset = dam_df, 
+                                        criteria = criteria, 
+                                        criteria_weights = criteria_weights, 
+                                        criteria_type = criteria_type)
+```
+
+Show results with a boxplot 
+```{r}
+
+wsm_MinMax_results %>% 
+  ggplot() + 
+  geom_boxplot(aes(x = wsm_scores, y = connectivity_category)) + 
+  theme_gray() + 
+  labs(title = "Boxplot of MinMax WSM results per catagory")
+
+wsm_Zscore_results %>% 
+  ggplot() + 
+  geom_boxplot(aes(x = wsm_scores, y = connectivity_category)) + 
+  theme_gray() + 
+  labs(title = "Boxplot of Zscore WSM results per catagory")
+
+
+```
+The main difference is the X-axis ranges. 
+
+
+## Trying real Dataset 
+Lucian's new cascade level data = `raf_data`
+`future_dams_flagged` = Aakritis fatal flaw dataset 
+
+```{r}
+# Load data 
+raf_data <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/raf_presentation_df.rds")
+future_dams_flagged <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/protected_area_draft.rds")
+east_as_basin_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev2/hybas_as_lev02_v1c/hybas_as_lev02_v1c.shp") |>
+  janitor::clean_names() %>% 
+  filter(hybas_id == 4020015090) %>% 
+  st_transform(crs = 4326)
+
+
+# Fix dam_id 
+future_dams_flagged$dam_id <- as.character(future_dams_flagged$dam_id)
+
+# Join PA with dam data 
+east_as_pa <- left_join(raf_data, future_dams_flagged, by = 'dam_id')
+
+# Fix the Data 
+east_as_pa <- east_as_pa %>%
+  mutate(connectivity_category = case_when(
+    cascade_level >= 1 ~ "cascade",
+    # (2) No dams in either direction OR both further than 200km
+    (is.na(min_distance_upstream_km) | min_distance_upstream_km > 70) &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 70) ~ "FFR",
+    # (3) Upstream dam within 200km, no downstream or downstream > 200km
+    min_distance_upstream_km <= 70 &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 70) ~ "downstream",
+    # (4) Downstream dam within 200km, no upstream or upstream > 200km
+    min_distance_downstream_km <= 70 &
+      (is.na(min_distance_upstream_km) | min_distance_upstream_km > 70) ~ "upstream",
+    TRUE ~ NA
+  )) %>% 
+  mutate(connectivity_category_num = case_when(
+    connectivity_category == "cascade" & cascade_level == 1 ~ 7, 
+    connectivity_category == "cascade" & cascade_level == 2 ~ 6,
+    connectivity_category == "cascade" & cascade_level >= 3 ~ 5, 
+    connectivity_category == "upstream" ~ 3,
+    connectivity_category == "downstream" ~ 2.99,
+    connectivity_category == "FFR" ~ 1,
+  )) %>% 
+  mutate(in_pa_num = ifelse(in_protected_area == FALSE, 1, 0)) %>%  # 1 = No in PA (good)
+  #st_drop_geometry() %>% 
+  filter(dam_type == "future")
+  
+```
+
+Run model 
+
+```{r}
+
+criteria <- c('csi', 'connectivity_category_num', 'in_pa_num')
+
+criteria_weights <- c(csi = 0.4, connectivity_category_num = 0.5, in_pa_num = 0.1)
+
+criteria_type <- c(csi = "nonbeneficial", # Lower number = better 
+                       connectivity_category_num = "beneficial", # Higher number = better 
+                       in_pa_num = "beneficial")
+
+
+wsm_MinMax_results2 <- wsm_model_MinMax(dataset = east_as_pa, 
+     criteria = criteria, 
+     criteria_weights = criteria_weights, 
+     criteria_type = criteria_type)
+
+wsm_Zscore_results2 <- wsm_model_zscore(dataset = east_as_pa, 
+     criteria = criteria, 
+     criteria_weights = criteria_weights, 
+     criteria_type = criteria_type)
+
+```
+
+Show results with a boxplot 
+```{r}
+
+wsm_MinMax_results2 %>% 
+  ggplot() + 
+  geom_boxplot(aes(x = wsm_scores, y = connectivity_category)) + 
+  theme_gray() + 
+  labs(title = "Boxplot of MinMax WSM results per catagory")
+
+wsm_Zscore_results2 %>% 
+  ggplot() + 
+  geom_boxplot(aes(x = wsm_scores, y = connectivity_category)) + 
+  theme_gray() + 
+  labs(title = "Boxplot of Zscore WSM results per catagory")
+
+```
+
+```{r}
+# Factor the connectivity_category_num 
+wsm_MinMax_results2$connectivity_category_num <- factor(wsm_MinMax_results2$connectivity_category_num, levels = c(7,6,5,3,2.99,1), labels = c('Cascade1', 'Cascade2', 'Cascade3+', 'Upstream', 'Downstream', "FFR"))
+
+wsm_Zscore_results2$connectivity_category_num <- factor(wsm_MinMax_results2$connectivity_category_num, levels = c(7.00,6.00,5.00,3.00,2.99,1.00), labels = c('Cascade1', 'Cascade2', 'Cascade3+', 'Upstream', 'Downstream', "FFR"))
+
+# Create a color paletes 
+connectivity_cat_pal <- c("Cascade1" = "#003800",
+                          "Cascade2" = "#1cbf3a",
+                          "Cascade3+" = "#b7ffd7",
+                          "Upstream" = "#ffe500",
+                          "Downstream" = "#f99b2f",
+                          "FFR" = "#c13000")
+
+#pal <- colorFactor(palette = connectivity_cat_pal, domain = results$connectivity_category)
+
+# Histogram 
+wsm_MinMax_results2 %>% 
+  #filter(connectivity_category == "cascade") %>% 
+  ggplot() +
+  geom_histogram(aes(wsm_scores, fill = connectivity_category_num)) + 
+  theme_light() + 
+  scale_fill_manual(values = connectivity_cat_pal) +
+  labs(title = "MinMax WSM Scrores", 
+       x = "WSM Scores", 
+       y = "Count", 
+       fill = "Connectivity Catagory") 
+
+
+# Histogram 
+wsm_Zscore_results2 %>% 
+  #filter(connectivity_category == "cascade") %>% 
+  ggplot() +
+  geom_histogram(aes(wsm_scores, fill = connectivity_category_num)) + 
+  theme_light() + 
+  scale_fill_manual(values = connectivity_cat_pal) +
+  labs(title = "Zscore WSM Scrores", 
+       x = "WSM Scores", 
+       y = "Count", 
+       fill = "Connectivity Catagory") 
+
+```
+Look at results with a table 
+wsm_Zscore_results2 does not have letters
+```{r}
+# Table
+wsm_MinMax_results2 %>% 
+  group_by(score_letter) %>% 
+  summarise(count = n(), 
+            avg_scores = mean(wsm_scores, na.rm = TRUE), 
+            max_scores = max(wsm_scores, na.rm = TRUE), 
+            min_scores = min(wsm_scores, na.rm = TRUE), 
+            median_scores = median(wsm_scores, na.rm = TRUE), 
+            avg_csi = mean(csi, na.rm = TRUE)) %>% 
+  kableExtra::kbl(digits = 3) %>% 
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+
+```
+
+
+Look at results with a map 
+
+```{r}
+
+# Make it sf and 
+wsm_MinMax_results2_sf <- st_as_sf(wsm_MinMax_results2, crs = 4326)
+
+# Check CRS 
+st_crs(wsm_MinMax_results2_sf) == st_crs(east_as_basin_sf)
+wsm_MinMax_results2_sf <- st_set_crs(wsm_MinMax_results2_sf, 4326) 
+
+
+# Plot 
+# GGplot 
+wsm_MinMax_ggmap <- ggplot() +
+  geom_sf(data = east_as_basin_sf, fill = NA, color = "black", alpha = 0.5) +
+  geom_sf(data = wsm_MinMax_results2_sf, aes(color = wsm_scores, 
+                                 text = paste0(
+      "<b>Dam_ID: ", dam_id, "</b><br>", 
+      "<b>CSI: </b>", csi, "<br>", 
+      "<b>Connectivity Category: </b>", connectivity_category_num, "<br>", 
+      "<b>In a PA: </b>", in_protected_area, "<br>",
+      "<b>Capacity: </b>", capacity_mw, "mw"
+    ))) +
+  scale_color_gradientn(
+    colors = colorRampPalette(c("#0f31bc", "#77d613", "orange"))(100),
+    name = "WSM Scores"
+  ) +
+  #theme_minimal() + 
+  theme_void() + 
+  labs(title = "Weighted Sum Model Scores for Future Dams in Southeast Asia")
+
+wsm_MinMax_ggmap_interactive <- ggplotly(wsm_MinMax_ggmap , 
+         tooltip = "text" # inside of hover tool tip
+         )
+
+wsm_MinMax_ggmap_interactive
+```
+
+```{r}
+# Make it sf and 
+wsm_Zscore_results2_sf <- st_as_sf(wsm_MinMax_results2, crs = 4326)
+
+# Check CRS 
+st_crs(wsm_Zscore_results2_sf) == st_crs(east_as_basin_sf)
+wsm_Zscore_results2_sf <- st_set_crs(wsm_Zscore_results2_sf, 4326) 
+
+
+# Plot 
+# GGplot 
+wsm_Zscore_ggmap <- ggplot() +
+  geom_sf(data = east_as_basin_sf, fill = NA, color = "black", alpha = 0.5) +
+  geom_sf(data = wsm_Zscore_results2_sf, aes(color = wsm_scores, 
+                                 text = paste0(
+      "<b>Dam_ID: ", dam_id, "</b><br>", 
+      "<b>CSI: </b>", csi, "<br>", 
+      "<b>Connectivity Category: </b>", connectivity_category_num, "<br>", 
+      "<b>In a PA: </b>", in_protected_area, "<br>",
+      "<b>Capacity: </b>", capacity_mw, "mw"
+    ))) +
+  scale_color_gradientn(
+    colors = colorRampPalette(c("#0f31bc", "#77d613", "orange"))(100),
+    name = "WSM Scores"
+  ) +
+  #theme_minimal() + 
+  theme_void() + 
+  labs(title = "Weighted Sum Model Scores for Future Dams in Southeast Asia")
+
+wsm_Zscore_ggmap_interactive <- ggplotly(wsm_Zscore_ggmap , 
+         tooltip = "text" # inside of hover tool tip
+         )
+
+wsm_Zscore_ggmap_interactive
+```
+
+

@@ -1,0 +1,237 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\usepackage[margin=1in]{geometry}
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\usepackage{framed}
+\definecolor{shadecolor}{RGB}{248,248,248}
+\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.94,0.16,0.16}{#1}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\BuiltInTok}[1]{#1}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.64,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\ImportTok}[1]{#1}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\usepackage{graphicx}
+\makeatletter
+\newsavebox\pandoc@box
+\newcommand*\pandocbounded[1]{% scales image to fit in text height/width
+  \sbox\pandoc@box{#1}%
+  \Gscale@div\@tempa{\textheight}{\dimexpr\ht\pandoc@box+\dp\pandoc@box\relax}%
+  \Gscale@div\@tempb{\linewidth}{\wd\pandoc@box}%
+  \ifdim\@tempb\p@<\@tempa\p@\let\@tempa\@tempb\fi% select the smaller of both
+  \ifdim\@tempa\p@<\p@\scalebox{\@tempa}{\usebox\pandoc@box}%
+  \else\usebox{\pandoc@box}%
+  \fi%
+}
+% Set default figure placement to htbp
+\def\fps@figure{htbp}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={wsm\_model.R},
+  pdfauthor={meganhessel},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\title{wsm\_model.R}
+\author{meganhessel}
+\date{2026-04-21}
+
+\begin{document}
+\maketitle
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\# =============================================================================}
+\CommentTok{\# wsm\_model.R}
+\CommentTok{\# =============================================================================}
+\CommentTok{\# Purpose: The Weighted Sum Model (WSM) uses given weights and criteria to evaluate the best decisions for each row. }
+\CommentTok{\#}
+\CommentTok{\# Expects: Each row is given a score based on the criteria and weights provided.}
+\CommentTok{\#}
+\CommentTok{\# Outside this function: The data frame must already contain columns with the criteria in numeric form. }
+\CommentTok{\# Each row represents an observation / individual dam.  }
+\CommentTok{\# }
+\CommentTok{\# Required packages: This model uses base R. }
+\CommentTok{\#}
+\CommentTok{\# Inline comments: plain{-}language walkthrough for explaining to a team what each}
+\CommentTok{\# step does and why.}
+\CommentTok{\# =============================================================================}
+\end{Highlighting}
+\end{Shaded}
+
+Weighted Sum Model (WSM) for Dam Prioritization
+
+Scores and ranks alternatives using a Weighted Sum Model (WSM). Each
+criterion is Min-Max normalized according to its type, multiplied by its
+assigned weight, and summed to produce a composite score for each
+observation.
+
+@param dataset A dataframe containing the alternatives to be scored.
+@param criteria A character vector of column names in \code{dataset} to
+use as criteria. @param criteria\_weights A named numeric vector of
+weights for each criterion. Must sum to 1. @param criteria\_type A named
+list indicating the type of each criterion. Accepted values are
+\code{"beneficial"} (higher values indicate better outcomes) or
+\code{"nonbeneficial"} (lower values are preferable).
+
+@return The input \code{dataset} with two additional columns: \describe{
+    \item{wsm_scores}{A numeric composite score between 0 and 1 for each observation.}
+    \item{score_letter}{A letter grade (A–D) based on fixed score thresholds:
+      A (> 0.75), B (0.50–0.75), C (0.25–0.50), D (0–0.25).}
+  }
+
+@examples wsm\_model( dataset = future\_dams, criteria = c(``csi'',
+``n\_protected\_areas'', ``distance\_downstream''), criteria\_weights =
+c(csi = 0.5, n\_protected\_areas = 0.3, distance\_downstream = 0.2),
+criteria\_type = list(csi = ``beneficial'', n\_protected\_areas =
+``non-beneficial'', distance\_downstream = ``beneficial'') )
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{wsm\_model }\OtherTok{\textless{}{-}} \ControlFlowTok{function}\NormalTok{(dataset, criteria, criteria\_weights, criteria\_type) \{}
+  
+  \CommentTok{\# Validate weights }
+  \ControlFlowTok{if}\NormalTok{ (}\FunctionTok{abs}\NormalTok{(}\FunctionTok{sum}\NormalTok{(criteria\_weights) }\SpecialCharTok{{-}} \DecValTok{1}\NormalTok{) }\SpecialCharTok{\textgreater{}} \FloatTok{1e{-}9}\NormalTok{) \{}\FunctionTok{stop}\NormalTok{(}\StringTok{"Criteria weights must sum to 1."}\NormalTok{)\}}
+  \CommentTok{\#if (abs(sum(criteria\_weights) != 1)) \{stop("Criteria weights must sum to 1.")\}}
+  
+  \CommentTok{\# {-}{-}{-} Filter for columns inputted as criteria {-}{-}{-} }
+\NormalTok{  dataset\_filter }\OtherTok{\textless{}{-}}\NormalTok{ dataset }\SpecialCharTok{\%\textgreater{}\%} \FunctionTok{select}\NormalTok{(}\FunctionTok{any\_of}\NormalTok{(criteria))}
+  
+  \CommentTok{\# {-}{-}{-}{-} Min{-}Max Normalize data {-}{-}{-}{-} }
+  
+  \CommentTok{\# Beneficial and Non beneficial functions}
+\NormalTok{  min\_max\_ben }\OtherTok{\textless{}{-}} \ControlFlowTok{function}\NormalTok{(x) \{}
+\NormalTok{    norm }\OtherTok{=}\NormalTok{ (x }\SpecialCharTok{{-}} \FunctionTok{min}\NormalTok{(x, }\AttributeTok{na.rm =} \ConstantTok{TRUE}\NormalTok{)) }\SpecialCharTok{/}\NormalTok{ (}\FunctionTok{max}\NormalTok{(x, }\AttributeTok{na.rm =} \ConstantTok{TRUE}\NormalTok{) }\SpecialCharTok{{-}} \FunctionTok{min}\NormalTok{(x, }\AttributeTok{na.rm =} \ConstantTok{TRUE}\NormalTok{))}
+    \FunctionTok{return}\NormalTok{(norm)}
+\NormalTok{  \}}
+  
+\NormalTok{  min\_max\_NONben }\OtherTok{\textless{}{-}} \ControlFlowTok{function}\NormalTok{(x) \{}
+\NormalTok{    norm }\OtherTok{=}\NormalTok{ (}\FunctionTok{max}\NormalTok{(x, }\AttributeTok{na.rm =} \ConstantTok{TRUE}\NormalTok{) }\SpecialCharTok{{-}}\NormalTok{ x) }\SpecialCharTok{/}\NormalTok{ (}\FunctionTok{max}\NormalTok{(x, }\AttributeTok{na.rm =} \ConstantTok{TRUE}\NormalTok{) }\SpecialCharTok{{-}} \FunctionTok{min}\NormalTok{(x, }\AttributeTok{na.rm =} \ConstantTok{TRUE}\NormalTok{))}
+    \FunctionTok{return}\NormalTok{(norm)}
+\NormalTok{  \}}
+  
+  
+  \CommentTok{\# Apply the benfical and nonbenfical functions to the correct criteria  }
+  \ControlFlowTok{for}\NormalTok{ (i }\ControlFlowTok{in} \FunctionTok{names}\NormalTok{(criteria\_type)) \{}
+    \ControlFlowTok{if}\NormalTok{ (criteria\_type[[i]] }\SpecialCharTok{==} \StringTok{"beneficial"}\NormalTok{) \{}
+\NormalTok{      dataset\_filter[, i] }\OtherTok{\textless{}{-}} \FunctionTok{min\_max\_ben}\NormalTok{(dataset\_filter[, i])}
+\NormalTok{    \} }\ControlFlowTok{else}\NormalTok{ \{}
+\NormalTok{      dataset\_filter[, i] }\OtherTok{\textless{}{-}} \FunctionTok{min\_max\_NONben}\NormalTok{(dataset\_filter[, i])}
+\NormalTok{    \}}
+\NormalTok{  \}}
+  
+  \CommentTok{\#{-}{-}{-}{-} Calculate weighted sum scores {-}{-}{-} }
+  \CommentTok{\#wsm\_scores \textless{}{-} rowSums(criteria\_weights * dataset\_filter) \# dataset\_filter might NOT align with criteria\_weights}
+\NormalTok{  wsm\_scores }\OtherTok{\textless{}{-}} \FunctionTok{rowSums}\NormalTok{(}\FunctionTok{mapply}\NormalTok{(}\ControlFlowTok{function}\NormalTok{(col, w) }\CommentTok{\# iterating over each column (c) of dataset\_filter \& its corresponding weight}
+\NormalTok{    col }\SpecialCharTok{*}\NormalTok{ w, dataset\_filter, }\CommentTok{\# multiply column \& its matching weight }
+\NormalTok{    criteria\_weights[}\FunctionTok{names}\NormalTok{(dataset\_filter)])) }\CommentTok{\# reorders the weights vectors to match dataset\_filter order, so everything get multi correctly}
+  
+  \CommentTok{\# Add scores to dataset }
+\NormalTok{  dataset}\SpecialCharTok{$}\NormalTok{wsm\_scores }\OtherTok{\textless{}{-}}\NormalTok{ wsm\_scores}
+  
+  
+  \CommentTok{\# Add letters }
+\NormalTok{  dataset }\OtherTok{\textless{}{-}}\NormalTok{ dataset }\SpecialCharTok{\%\textgreater{}\%} 
+    \FunctionTok{mutate}\NormalTok{(}\AttributeTok{score\_letter =} \FunctionTok{case\_when}\NormalTok{(}
+      \FunctionTok{between}\NormalTok{(wsm\_scores, }\DecValTok{0}\NormalTok{, }\FloatTok{0.25}\NormalTok{) }\SpecialCharTok{\textasciitilde{}} \StringTok{\textquotesingle{}D\textquotesingle{}}\NormalTok{,}
+      \FunctionTok{between}\NormalTok{(wsm\_scores, }\FloatTok{0.25}\NormalTok{, }\FloatTok{0.50}\NormalTok{) }\SpecialCharTok{\textasciitilde{}} \StringTok{\textquotesingle{}C\textquotesingle{}}\NormalTok{,}
+      \FunctionTok{between}\NormalTok{(wsm\_scores, }\FloatTok{0.50}\NormalTok{, }\FloatTok{0.75}\NormalTok{) }\SpecialCharTok{\textasciitilde{}} \StringTok{\textquotesingle{}B\textquotesingle{}}\NormalTok{,}
+\NormalTok{      wsm\_scores }\SpecialCharTok{\textgreater{}} \FloatTok{0.75} \SpecialCharTok{\textasciitilde{}} \StringTok{\textquotesingle{}A\textquotesingle{}}\NormalTok{,}
+      \ConstantTok{TRUE} \SpecialCharTok{\textasciitilde{}} \ConstantTok{NA}\NormalTok{))}
+  
+  \CommentTok{\# dataset \textless{}{-} dataset \%\textgreater{}\% }
+  \CommentTok{\#   mutate(}
+  \CommentTok{\#     quartile = ntile(wsm\_scores, n = 5), \# Higher groups better }
+  \CommentTok{\#     quartile\_label = case\_when( \# Add letters based on quartiles }
+  \CommentTok{\#       quartile == 1 \textasciitilde{} "F", }
+  \CommentTok{\#       quartile == 2 \textasciitilde{} "D",}
+  \CommentTok{\#       quartile == 3 \textasciitilde{} "C",}
+  \CommentTok{\#       quartile == 4 \textasciitilde{} "B", }
+  \CommentTok{\#       quartile == 5 \textasciitilde{} "A"}
+  \CommentTok{\#     )}
+  \CommentTok{\#   ) \%\textgreater{}\% }
+  \CommentTok{\#   select(!quartile) \# Remove this column }
+  
+  \CommentTok{\# return the dataset }
+  
+  \FunctionTok{return}\NormalTok{(dataset)}
+  
+\NormalTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+
+\end{document}

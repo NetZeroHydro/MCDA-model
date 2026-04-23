@@ -1,0 +1,360 @@
+---
+title: "sensitivity-testing"
+format: html
+warnings: false
+---
+
+
+### GOAL: See how the dam scores vary with different weights.
+
+
+```{r}
+#| output: false 
+source(here::here("wsm_model_MinMax.R"))
+library(dplyr)
+library(tidyverse)
+library(sf)
+library(ggplot2)
+library(plotly)
+```
+
+
+## Load and Wrangle Data
+
+
+```{r}
+#| output: false 
+# Load data 
+future_dams_flagged <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/protected_area_draft.rds")
+#east_as <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/se_as_basin_df.rds")
+east_as <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1//raf_presentation_df.rds")
+east_as_basin_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev2/hybas_as_lev02_v1c/hybas_as_lev02_v1c.shp") |>
+  janitor::clean_names() %>% 
+  filter(hybas_id == 4020015090) %>% 
+  st_transform(crs = 4326)
+
+east_as_network <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/nets_with_dams/net_hybas4020015090_Asia_pfaf02.rds")
+
+# Fix dam_id 
+future_dams_flagged$dam_id <- as.character(future_dams_flagged$dam_id)
+
+# Join PA with dam data 
+east_as_pa <- left_join(east_as, future_dams_flagged, by = 'dam_id')
+
+# Fix the Data 
+east_as_pa <- east_as_pa %>%
+  mutate(connectivity_category = case_when(
+    # (1) Both within 250km
+    cascade_level == 1 ~ "cascade1",
+    cascade_level == 2 ~ "cascade2",
+    cascade_level >= 3 ~ "cascade3+",
+    # (2) No dams in either direction OR both further than 200km
+    (is.na(min_distance_upstream_km) | min_distance_upstream_km > 70) &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 70) ~ "FFR",
+    # (3) Upstream dam within 200km, no downstream or downstream > 200km
+    min_distance_upstream_km <= 70 &
+      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 70) ~ "downstream",
+    # (4) Downstream dam within 200km, no upstream or upstream > 200km
+    min_distance_downstream_km <= 70 &
+      (is.na(min_distance_upstream_km) | min_distance_upstream_km > 70) ~ "upstream",
+    TRUE ~ NA
+  )) %>% 
+  mutate(connectivity_category_num = case_when(
+    connectivity_category == "cascade1" ~ 7, 
+    connectivity_category == "cascade2" ~ 5, 
+    connectivity_category == "cascade3+" ~ 5, 
+    connectivity_category == "upstream" ~ 3,
+    connectivity_category == "downstream" ~ 3,
+    connectivity_category == "FFR" ~ 1,
+  )) %>% 
+  mutate(in_pa_num = ifelse(in_protected_area == FALSE, 1, 0)) %>% # 1 = No in PA (good)
+  #st_drop_geometry() %>% 
+  filter(dam_type == "future")
+  
+```
+
+```{r}
+head(east_as_pa)
+```
+
+
+
+## Generate Random Weights for the criteria - where each row = 1
+
+Think of it like randomly throwing 2 points on a line from 0 to 1 (for 3 criteria), then measuring the 3 gap sizes — they'll always sum to 1.
+
+
+```{r}
+#| output: false 
+n_simulations <- 198
+
+criteria <- c('csi', 'connectivity_category_num', 'in_pa_num') # This is for the function
+
+n_criteria <- length(criteria)
+
+# EMPTY MATRIX: one row per simulation, one column per criteria 
+weight_samples <- matrix(NA, nrow = n_simulations, ncol = n_criteria)
+colnames(weight_samples) <- criteria
+
+
+# FILL MATRIX: with weights - each row = 1 
+for (i in 1:n_simulations) {
+  w <- diff(c(0, sort(runif(n_criteria - 1)), 1)) # draw (n_criteria - 1) random numbers between 0 and 1  
+  weight_samples[i, ] <- w # Find the distance between the (n_criteria - 1) random numbers = random weights 
+}
+
+# Make the matrix a list of each criteria combo 
+weight_samples_list <- lapply(1:nrow(weight_samples), # Create list from 1 to # of rows in weight_samples 
+                               function(i) weight_samples[i, ] )# Function that pulls row by row
+
+```
+
+
+## Method 1: Run samples for the dataset over the differing weights
+
+
+```{r}
+#| output: false 
+criteria <- c('csi', 'connectivity_category_num', 'in_pa_num')
+
+criteria_type <- c(csi = "nonbeneficial", # Lower number = better 
+                       connectivity_category_num = "beneficial", # Higher number = better 
+                       in_pa_num = "beneficial")
+
+# Run the function over the varying weights 
+score_results <- map(.x = weight_samples_list, ~{
+  wsm_model(
+    dataset = east_as_pa, 
+    criteria = criteria, 
+    criteria_weights = .x, # Varying
+    criteria_type = criteria_type
+  )}
+    ) %>% bind_cols() # Bind multiple dataframes by column 
+
+
+```
+
+```{r}
+#| output: false 
+
+# Pivot results and summaries WSM scores
+
+dam_pivot <- score_results %>%
+  pivot_longer(
+    cols = matches("wsm_scores"),
+    names_to = "wsm_score",  
+    values_to = "value"
+  )
+
+dam_pivot_select <- dam_pivot %>% 
+  select(c(dam_id...1, wsm_score, value))
+
+dam_wsm_sum <- dam_pivot_select %>%
+  group_by(dam_id...1) %>% 
+  summarise(
+    maxWSM = max(value), 
+    maxWSM = min(value), 
+    avgWSM = mean(value), 
+    sdWSM = sd(value), 
+    rangeWSM = maxWSM - maxWSM
+  )  %>% 
+  rename('dam_id' = 'dam_id...1')
+
+```
+
+```{r}
+head(dam_wsm_sum)
+```
+
+
+## Method 2: Extracting only the scores, then analyze rank stability
+
+
+```{r}
+#| output: false 
+criteria <- c('csi', 'connectivity_category_num', 'in_pa_num')
+
+criteria_type <- list(
+  csi = "nonbeneficial",
+  connectivity_category_num = "beneficial",
+  in_pa_num = "beneficial"
+)
+
+# Run simulations, keeping only wsm_scores per run
+score_results <- map(weight_samples_list, \(w) {
+  wsm_model(
+    dataset = east_as_pa,
+    criteria = criteria,
+    criteria_weights = w,
+    criteria_type = criteria_type
+  )$wsm_scores  # Pull scores only
+}) %>%
+  bind_cols() %>%   # Each col = one simulation
+  setNames(paste0("sim_", 1:n_simulations)) # Col names to simulation # 
+
+# Add dam ID for reference
+score_results <- bind_cols( # Glues dam col from east_as_pa to score_results horizontally.
+  east_as_pa %>% select(dam_id), 
+  score_results
+)
+
+score_summary <- score_results %>%
+  rowwise() %>% # Work within a row 
+  mutate(
+    mean_score = mean(c_across(starts_with("sim_")), na.rm = TRUE), # Find mean with all columns that start with 'sim_'
+    sd_score   = sd(c_across(starts_with("sim_")), na.rm = TRUE), # Find sd with all columns that start with 'sim_'
+    cv         = sd_score / mean_score, # coefficient of variation — high CV = weight-sensitive - DONT USE because sometimes 0/0 = NaN
+    max =  max(c_across(starts_with("sim_"))),
+    min = min(c_across(starts_with("sim_"))),
+    range  = max - min
+  ) %>% 
+    arrange(desc(cv)) %>% 
+  select(c(dam_id, mean_score, sd_score, cv,max, min, range))
+
+```
+
+```{r}
+head(score_summary)
+```
+
+CV metric: mean_score / sd_score. Some dams have mean is 0 and sd is 0 = 0/0 = undefined = NaN. Not helpful. 
+
+## Results 
+
+### Score Ranges 
+
+```{r}
+# Look at the ranges 
+ggplot(score_summary) + 
+  geom_linerange(aes(y = dam_id, xmin = min, xmax = max), color = "grey") + 
+  geom_point(aes(x = max, y = dam_id), color = "blue") + 
+  geom_point(aes(x = min, y = dam_id), color = "red") + 
+  labs(title = "Ranges for all dams") + 
+  theme_light()
+
+# Look at dams with high range - These are sensitive to weights  
+score_summary %>% 
+  filter(range > 0.5) %>% 
+  ggplot() +
+  geom_linerange(aes(y = dam_id, xmin = min, xmax = max), color = "grey") + 
+  geom_point(aes(x = max, y = dam_id), color = "blue") + 
+  geom_point(aes(x = min, y = dam_id), color = "red") + 
+  labs(x = "WSM Scores", 
+       title = "Dams with Ranges over 0.5") + 
+  theme_light()
+
+# Look at dams with low range - these are NOT sensitive 
+score_summary %>% 
+  filter(range < 0.5) %>% 
+  ggplot() +
+  geom_linerange(aes(y = dam_id, xmin = min, xmax = max), color = "darkgrey") + 
+  geom_point(aes(x = max, y = dam_id), color = "blue") + 
+  geom_point(aes(x = min, y = dam_id), color = "red") + 
+  labs(x = "WSM Scores", 
+       title = "Dams with Ranges under 0.5") + 
+  theme_light()
+
+```
+
+
+### Scores mean and sd 
+
+```{r}
+ggplot(score_summary, aes(x = mean_score, y = sd_score, label = dam_id)) +
+  geom_point() +
+  geom_text(size = 2, vjust = -0.5) + 
+  theme_light()+ 
+  labs(title = "WSM Mean Scores and Standard Deviation")
+
+```
+
+The WSM mean scores that are 0 are consistently 0 with low sensitivity. 
+The WSM Scores that are greater than 0 have higher sd. 
+
+### Map Ranges
+
+
+```{r}
+# Join back with orginal data set 
+score_summary_sf <- left_join(score_summary, east_as_pa, by = 'dam_id') 
+
+# Make spatial 
+score_summary_sf <- st_as_sf(score_summary_sf)
+
+# Map 
+
+# GGplot 
+wms_ggmap_cat <- ggplot() +
+  geom_sf(data = east_as_basin_sf, fill = NA, color = "black", alpha = 0.5) +
+  geom_sf(data = east_as_network$rivers_cropped, color = "grey", alpha = 0.45) + 
+  geom_sf(data = score_summary_sf, aes(color = range, 
+                                 text = paste0(
+      "<b>Dam_ID: ", dam_id, "</b><br>", 
+      "<b>Connectivity Category: </b>", connectivity_category, "<br>", 
+      "<b>CSI: </b>", csi, "<br>", 
+      "<b>In a PA: </b>", in_protected_area, "<br>",
+      "<b>Capacity: </b>", capacity_mw, "mw", "<br>",
+      "<b> MEAN Weighted Sum Model Score: </b>", round(mean_score, 3), "<br>",
+      "<b> SD Weighted Sum Model Score: </b>", round(sd_score, 3), "<br>",
+      "<b> Range: </b>", round(range, 3)
+    )), alpha = 0.7) +
+  theme_void() + 
+  labs(title = "WSM Model Ranges for Future Dams in Southeast Asia", 
+       color = "Range"
+       )
+# Make it interactive 
+con_cat_ggmap_interactive <- ggplotly(wms_ggmap_cat, 
+         tooltip = "text" # inside of hover tool tip
+         )
+
+con_cat_ggmap_interactive
+
+```
+
+
+### Dams with Low sensitivity 
+
+```{r}
+# Filter for dams criteria with low sensitivity  
+score_low_sensitivity <- left_join(score_summary, east_as_pa, by = "dam_id") %>% 
+  filter(range < 0.5) %>% 
+  select(dam_id, mean_score, sd_score, range, connectivity_category, connectivity_category_num, csi, in_pa_num)
+
+# Low sensitive Dams 
+score_low_sensitivity
+
+# Look at results for low sensitivity dams 
+score_low_sensitivity_sum <- score_low_sensitivity %>% 
+  group_by(connectivity_category) %>% 
+  summarise(count = n(), 
+            avg_meanWSM = mean(mean_score), 
+            med_meanWSM = median(mean_score), 
+            avg_rangeWSM = mean(range))
+score_low_sensitivity_sum
+
+# Print statement for FFRs sensitivity 
+east_as_pa_ffr_count <- east_as_pa %>% filter(connectivity_category == "FFR") %>% count()
+
+print(paste0("The total number of FFRs in this dataset are ", {east_as_pa_ffr_count},". The FFR with low sensitivity are ", {score_low_sensitivity_sum$count[1]}, ". Therefore, ", {round(score_low_sensitivity_sum$count[1] / east_as_pa_ffr_count,3)}, "% of the FFR have low sensitivity."))
+  
+```
+
+
+
+### Dif. between the methods 
+
+```{r}
+ggplot() +
+  geom_point(data = dam_wsm_sum, 
+             mapping = aes(x = avgWSM, y = sdWSM), 
+             color = "blue") + 
+   geom_point(data = score_summary, 
+             mapping = aes(x = mean_score, y = sd_score), 
+             color = "red", 
+             alpha = 0.3) + 
+  labs(x = "WSM Scores")
+
+```
+
+Both methods worked and produced the same mean and sd WSM Scores. 
+
