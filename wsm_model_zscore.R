@@ -70,9 +70,9 @@ wsm_model_zscore <- function(dataset, criteria, criteria_weights, criteria_type)
   # Apply the benfical and nonbenfical functions to the correct criteria  
   for (i in names(criteria_type)) {
     if (criteria_type[[i]] == "beneficial") {
-      dataset_filter[, i] <- zscore_ben(dataset_filter[, i])
+      dataset_filter[[i]] <- zscore_ben(dataset_filter[[i]])
     } else {
-      dataset_filter[, i] <- zscore_NONben(dataset_filter[, i])
+      dataset_filter[[i]] <- zscore_NONben(dataset_filter[[i]])
     }
   }
   
@@ -84,17 +84,6 @@ wsm_model_zscore <- function(dataset, criteria, criteria_weights, criteria_type)
   
   # Add scores to dataset 
   dataset$wsm_scores <- wsm_scores
-  
-  
-  # Add letters - DIFFICULT BECAUSE NOT RANGED [0,1] ANYMORE 
-  # dataset <- dataset %>% 
-  #   mutate(score_letter = case_when(
-  #     between(wsm_scores, 0, 0.25) ~ 'D',
-  #     between(wsm_scores, 0.25, 0.50) ~ 'C',
-  #     between(wsm_scores, 0.50, 0.75) ~ 'B',
-  #     wsm_scores > 0.75 ~ 'A',
-  #     TRUE ~ NA))
-  
   
   # return the dataset 
   return(dataset)

@@ -12,12 +12,13 @@ library(tidyverse)
 library(sf)
 library(ggplot2)
 library(plotly)
+library(tidyr)
 ```
 
+## Fake dataset
 
-## Fake dataset 
+Building a fake dataset that I can predict the outcomes
 
-Building a fake dataset that I can predict the outcomes 
 ```{r}
 dam_df <- data.frame(
   dam_id = c("2001", "2002", "2003", "2004", "2005", "2006", "2007", "2008", "2009", "2010"), 
@@ -60,7 +61,7 @@ dam_df
 
 ```
 
-Trying function on fake data 
+Trying function on fake data
 
 ```{r}
 
@@ -83,7 +84,8 @@ wsm_Zscore_results <-  wsm_model_zscore(dataset = dam_df,
                                         criteria_type = criteria_type)
 ```
 
-Show results with a boxplot 
+Show results with a boxplot
+
 ```{r}
 
 wsm_MinMax_results %>% 
@@ -100,59 +102,54 @@ wsm_Zscore_results %>%
 
 
 ```
-The main difference is the X-axis ranges. 
 
+The main difference is the X-axis ranges.
 
-## Trying real Dataset 
-Lucian's new cascade level data = `raf_data`
-`future_dams_flagged` = Aakritis fatal flaw dataset 
+## Trying real Dataset
+
+**Data used:** Dam connectivity of the Mekong Basin.
+
+-   `conn_v3` is from Connectivity repo's `function_testing_v3.qmd`. Before running `function_testing_v3.qmd`, need to run net_with_dams_from_rivernetwork.
+
+-   `protected_areas` from the protected Area repo.
 
 ```{r}
 # Load data 
-raf_data <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/raf_presentation_df.rds")
-future_dams_flagged <- readRDS("../../../../../capstone/netzerohydro/data/cleaned_v1/protected_area_draft.rds")
-east_as_basin_sf <- read_sf("../../../../../capstone/netzerohydro/data/raw/hybas_lev2/hybas_as_lev02_v1c/hybas_as_lev02_v1c.shp") |>
-  janitor::clean_names() %>% 
-  filter(hybas_id == 4020015090) %>% 
-  st_transform(crs = 4326)
+reach_df <- conn_v3$reach_df # From `function_testing_v3.qmd` 
+protected_areas <- readRDS('../../../../../capstone/netzerohydro/data/cleaned_v1/protected_area_draft.rds')
 
+# Add Protected areas 
+protected_areas$dam_id <- as.character(protected_areas$dam_id) # Fix dam_id 
+reach_df <- reach_df %>% separate_wider_delim(dam_id, "_", names = c("dam_dataset", "dam_id")) # Seperate dam_id column to match the pa 
+reach_df_pa <- left_join(reach_df, protected_areas, by = 'dam_id') # Join PA with dam data 
 
-# Fix dam_id 
-future_dams_flagged$dam_id <- as.character(future_dams_flagged$dam_id)
-
-# Join PA with dam data 
-east_as_pa <- left_join(raf_data, future_dams_flagged, by = 'dam_id')
-
-# Fix the Data 
-east_as_pa <- east_as_pa %>%
-  mutate(connectivity_category = case_when(
-    cascade_level >= 1 ~ "cascade",
-    # (2) No dams in either direction OR both further than 200km
-    (is.na(min_distance_upstream_km) | min_distance_upstream_km > 70) &
-      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 70) ~ "FFR",
-    # (3) Upstream dam within 200km, no downstream or downstream > 200km
-    min_distance_upstream_km <= 70 &
-      (is.na(min_distance_downstream_km) | min_distance_downstream_km > 70) ~ "downstream",
-    # (4) Downstream dam within 200km, no upstream or upstream > 200km
-    min_distance_downstream_km <= 70 &
-      (is.na(min_distance_upstream_km) | min_distance_upstream_km > 70) ~ "upstream",
-    TRUE ~ NA
-  )) %>% 
-  mutate(connectivity_category_num = case_when(
-    connectivity_category == "cascade" & cascade_level == 1 ~ 7, 
-    connectivity_category == "cascade" & cascade_level == 2 ~ 6,
-    connectivity_category == "cascade" & cascade_level >= 3 ~ 5, 
-    connectivity_category == "upstream" ~ 3,
-    connectivity_category == "downstream" ~ 2.99,
-    connectivity_category == "FFR" ~ 1,
-  )) %>% 
-  mutate(in_pa_num = ifelse(in_protected_area == FALSE, 1, 0)) %>%  # 1 = No in PA (good)
-  #st_drop_geometry() %>% 
-  filter(dam_type == "future")
-  
+# Add CSI 
+# Join river-edge attributes by bb_id.
+mekong_dams_final <- add_ffr_attr(
+  out$net_with_dams,
+  reach_df_pa,
+  edge_attr_cols = c("csi", "ord_stra", "bas_name"),
+  future_extra   = future_dams %>%
+  dplyr::mutate(dam_id = as.character(.data$dam_id)) %>%
+  dplyr::select(dam_id, capacity_mw, project_name)
+)
 ```
 
-Run model 
+```{r}
+mekong_dams_final <- mekong_dams_final %>% 
+  mutate(connectivity_category_num = case_when(
+    connectivity_category == "cascade_classic" ~ 7, 
+    connectivity_category == "cascade1" ~ 6,
+    connectivity_category == "cascade2" ~ 5, 
+    connectivity_category == "upstream" ~ 3,
+    connectivity_category == "downstream" ~ 3,
+    connectivity_category == "FFR" ~ 1,
+  )) %>% 
+  mutate(in_pa_num = ifelse(in_protected_area == FALSE, 1, 0))  # 1 = No in PA (good)
+  #st_drop_geometry() 
+```
+
+Run models
 
 ```{r}
 
@@ -165,19 +162,20 @@ criteria_type <- c(csi = "nonbeneficial", # Lower number = better
                        in_pa_num = "beneficial")
 
 
-wsm_MinMax_results2 <- wsm_model_MinMax(dataset = east_as_pa, 
+wsm_MinMax_results2 <- wsm_model_MinMax(dataset = mekong_dams_final, 
      criteria = criteria, 
      criteria_weights = criteria_weights, 
      criteria_type = criteria_type)
 
-wsm_Zscore_results2 <- wsm_model_zscore(dataset = east_as_pa, 
+wsm_Zscore_results2 <- wsm_model_zscore(dataset = mekong_dams_final, 
      criteria = criteria, 
      criteria_weights = criteria_weights, 
      criteria_type = criteria_type)
 
 ```
 
-Show results with a boxplot 
+Show results with a boxplot
+
 ```{r}
 
 wsm_MinMax_results2 %>% 
@@ -195,26 +193,24 @@ wsm_Zscore_results2 %>%
 ```
 
 ```{r}
-# Factor the connectivity_category_num 
-wsm_MinMax_results2$connectivity_category_num <- factor(wsm_MinMax_results2$connectivity_category_num, levels = c(7,6,5,3,2.99,1), labels = c('Cascade1', 'Cascade2', 'Cascade3+', 'Upstream', 'Downstream', "FFR"))
-
-wsm_Zscore_results2$connectivity_category_num <- factor(wsm_MinMax_results2$connectivity_category_num, levels = c(7.00,6.00,5.00,3.00,2.99,1.00), labels = c('Cascade1', 'Cascade2', 'Cascade3+', 'Upstream', 'Downstream', "FFR"))
+# Factor the connectivity_category to get a specific order 
+wsm_MinMax_results2$connectivity_category <- factor(wsm_MinMax_results2$connectivity_category, levels = c('cascade_classic', 'cascade1', 'cascade2', 'upstream', 'downstream', "FFR"))
+wsm_Zscore_results2$connectivity_category <- factor(wsm_Zscore_results2$connectivity_category, levels = c('cascade_classic', 'cascade1', 'cascade2', 'upstream', 'downstream', "FFR"))
 
 # Create a color paletes 
-connectivity_cat_pal <- c("Cascade1" = "#003800",
-                          "Cascade2" = "#1cbf3a",
-                          "Cascade3+" = "#b7ffd7",
-                          "Upstream" = "#ffe500",
-                          "Downstream" = "#f99b2f",
+connectivity_cat_pal <- c("cascade_classic" = "#003800",
+                          "cascade1" = "#1cbf3a",
+                          "cascade2" = "#b7ffd7",
+                          "upstream" = "#ffe500",
+                          "downstream" = "#f99b2f",
                           "FFR" = "#c13000")
 
-#pal <- colorFactor(palette = connectivity_cat_pal, domain = results$connectivity_category)
 
 # Histogram 
 wsm_MinMax_results2 %>% 
   #filter(connectivity_category == "cascade") %>% 
   ggplot() +
-  geom_histogram(aes(wsm_scores, fill = connectivity_category_num)) + 
+  geom_histogram(aes(wsm_scores, fill = connectivity_category)) + 
   theme_light() + 
   scale_fill_manual(values = connectivity_cat_pal) +
   labs(title = "MinMax WSM Scrores", 
@@ -227,7 +223,7 @@ wsm_MinMax_results2 %>%
 wsm_Zscore_results2 %>% 
   #filter(connectivity_category == "cascade") %>% 
   ggplot() +
-  geom_histogram(aes(wsm_scores, fill = connectivity_category_num)) + 
+  geom_histogram(aes(wsm_scores, fill = connectivity_category)) + 
   theme_light() + 
   scale_fill_manual(values = connectivity_cat_pal) +
   labs(title = "Zscore WSM Scrores", 
@@ -236,8 +232,9 @@ wsm_Zscore_results2 %>%
        fill = "Connectivity Catagory") 
 
 ```
-Look at results with a table 
-wsm_Zscore_results2 does not have letters
+
+Look at results with a table wsm_Zscore_results2 does not have letters
+
 ```{r}
 # Table
 wsm_MinMax_results2 %>% 
@@ -254,8 +251,7 @@ wsm_MinMax_results2 %>%
 
 ```
 
-
-Look at results with a map 
+Look at results with a map
 
 ```{r}
 
@@ -296,7 +292,7 @@ wsm_MinMax_ggmap_interactive
 
 ```{r}
 # Make it sf and 
-wsm_Zscore_results2_sf <- st_as_sf(wsm_MinMax_results2, crs = 4326)
+wsm_Zscore_results2_sf <- st_as_sf(wsm_Zscore_results2, crs = 4326)
 
 # Check CRS 
 st_crs(wsm_Zscore_results2_sf) == st_crs(east_as_basin_sf)
@@ -329,5 +325,3 @@ wsm_Zscore_ggmap_interactive <- ggplotly(wsm_Zscore_ggmap ,
 
 wsm_Zscore_ggmap_interactive
 ```
-
-
