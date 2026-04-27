@@ -1,0 +1,203 @@
+---
+title: "sentivity-testing-RANK-MinMax"
+format: html
+---
+
+This document looks at how dams are ranked differently with various weights. 
+
+
+```{r}
+#| output: false 
+source(here::here("wsm_model_MinMax.R"))
+library(dplyr)
+library(tidyverse)
+library(sf)
+library(ggplot2)
+library(plotly)
+```
+
+**Data used:** Dam connectivity of the Mekong Basin.
+
+-   `conn_v3` is from Connectivity repo's `function_testing_v3.qmd`. Before running `function_testing_v3.qmd`, need to run net_with_dams_from_rivernetwork.
+
+-   `protected_areas` from the protected Area repo.
+
+```{r}
+# Load data 
+reach_df <- conn_v3$reach_df # From `function_testing_v3.qmd` 
+protected_areas <- readRDS('../../../../../capstone/netzerohydro/data/cleaned_v1/protected_area_draft.rds')
+
+# Add Protected areas 
+protected_areas$dam_id <- as.character(protected_areas$dam_id) # Fix dam_id 
+reach_df <- reach_df %>% separate_wider_delim(dam_id, "_", names = c("dam_dataset", "dam_id")) # Seperate dam_id column to match the pa 
+reach_df_pa <- left_join(reach_df, protected_areas, by = 'dam_id') # Join PA with dam data 
+
+# Add CSI 
+# Join river-edge attributes by bb_id.
+mekong_dams_final <- add_ffr_attr(
+  out$net_with_dams,
+  reach_df_pa,
+  edge_attr_cols = c("csi", "ord_stra", "bas_name"),
+  future_extra   = future_dams %>%
+  dplyr::mutate(dam_id = as.character(.data$dam_id)) %>%
+  dplyr::select(dam_id, capacity_mw, project_name)
+)
+```
+
+```{r}
+mekong_dams_final <- mekong_dams_final %>% 
+  mutate(connectivity_category_num = case_when(
+    connectivity_category == "cascade_classic" ~ 7, 
+    connectivity_category == "cascade1" ~ 6,
+    connectivity_category == "cascade2" ~ 5, 
+    connectivity_category == "upstream" ~ 3,
+    connectivity_category == "downstream" ~ 3,
+    connectivity_category == "FFR" ~ 1,
+  )) %>% 
+  mutate(in_pa_num = ifelse(in_protected_area == FALSE, 1, 0))  # 1 = No in PA (good)
+  #st_drop_geometry() 
+```
+
+## Generate Random Weights for the criteria - where each row = 1
+
+Think of it like randomly throwing 2 points on a line from 0 to 1 (for 3 criteria), then measuring the 3 gap sizes — they'll always sum to 1.
+
+```{r}
+#| output: false 
+n_simulations <- 198
+
+criteria <- c('csi', 'connectivity_category_num', 'in_pa_num') # This is for the function
+
+n_criteria <- length(criteria)
+
+# EMPTY MATRIX: one row per simulation, one column per criteria 
+weight_samples <- matrix(NA, nrow = n_simulations, ncol = n_criteria)
+colnames(weight_samples) <- criteria
+
+
+# FILL MATRIX: with weights - each row = 1 
+for (i in 1:n_simulations) {
+  w <- diff(c(0, sort(runif(n_criteria - 1)), 1)) # draw (n_criteria - 1) random numbers between 0 and 1  
+  weight_samples[i, ] <- w # Find the distance between the (n_criteria - 1) random numbers = random weights 
+}
+
+# Make the matrix a list of each criteria combo 
+weight_samples_list <- lapply(1:nrow(weight_samples), # Create list from 1 to # of rows in weight_samples 
+                               function(i) weight_samples[i, ] )# Function that pulls row by row
+
+```
+
+Run the model 
+```{r}
+#| output: false 
+criteria <- c('csi', 'connectivity_category_num', 'in_pa_num')
+
+criteria_type <- list(
+  csi = "nonbeneficial",
+  connectivity_category_num = "beneficial",
+  in_pa_num = "beneficial"
+)
+
+# Run simulations, keeping only wsm_scores per run
+score_results <- map(weight_samples_list, \(w) {
+  wsm_model_MinMax(
+    dataset = east_as_pa,
+    criteria = criteria,
+    criteria_weights = w,
+    criteria_type = criteria_type
+  )$wsm_scores  # Pull scores only
+}) %>%
+  bind_cols() %>%   # Each col = one simulation
+  setNames(paste0("sim_", 1:n_simulations)) # Col names to simulation # 
+
+# Add dam ID for reference
+score_results <- bind_cols( # Glues dam col from east_as_pa to score_results horizontally.
+  east_as_pa %>% select(dam_id), 
+  score_results
+)
+```
+
+Look at dam ranks for each simulation 
+```{r}
+score_results_rank <- score_results %>% 
+  mutate(across(starts_with("sim_"), ~rank(.x), .names = "rank_{.col}")) %>% 
+  select("dam_id", starts_with("rank_"))
+
+
+```
+
+Box plot 
+"How consistent is each dam's rank across simulations?" → boxplot per dam (spread = uncertainty)
+```{r}
+score_results_rank %>% 
+  pivot_longer(
+    cols = starts_with("rank_"), 
+    names_to = "simulations", 
+    values_to = "scores"
+  ) %>% 
+  ggplot() + 
+  geom_boxplot(aes(y = dam_id, x = scores))
+```
+
+```{r}
+score_results_rank %>%
+  # pivot data 
+  pivot_longer(cols = starts_with("rank_"), 
+               names_to = "simulation", 
+               values_to = "rank") %>% 
+  group_by(dam_id) %>% 
+  # Get the median rank and the IQR 
+  summarise(
+    median_rank = median(rank),
+    iqr = IQR(rank, na.rm = TRUE) # interquartile range (IQR) - measure of statistical spread (range of the middle 50% of a df)
+  ) %>% 
+  arrange(median_rank)
+
+```
+**Dicussion:**
+The IQR shows how spread the data is - each dam's typical rank (median) and sensitivity to weight changes (IQR).
+
+Dam 1969 is ranked a 1st in every simulation (IQR = 0) = Robustly the best. 
+Dam 3218, 3158 — same, locked in their rank (4 and 5) regardless of weights (IQR = 0).
+
+Dam 3214 — usually 6th, but rank swings ±4 positions depending on weights. Somewhat sensitive.
+Dam 3514 — usually 7th, but ±6.5 positions. Getting less reliable.
+
+Dam 3151, 3618 — this is the red flag. Median rank ~10 but IQR of 134 and 172 means these dams rank near the top in some simulations and near the bottom in others. Highly sensitive to which weights you choose. Their apparent performance is an artifact of specific weight choices.
+
+```{r}
+score_results_rank %>%
+  # pivot data 
+  pivot_longer(cols = starts_with("rank_"), 
+               names_to = "simulation", 
+               values_to = "rank") %>% 
+  group_by(dam_id) %>% 
+  mutate(median_rank = median(rank), 
+         IQR = IQR(rank)) %>% 
+  filter(rank <= 20) %>% # top 20
+  ggplot() + 
+  geom_boxplot(aes(x = rank, 
+                   y = reorder(factor(dam_id), -median_rank),# Order the dams by the median rank 
+                   fill = IQR
+                   ), 
+               outlier.size = 0.5, 
+               outlier.color = "darkgrey") + 
+  scale_fill_gradient(low = "steelblue", high = "red", name = "IQR (less = more robust)") +
+  theme_minimal()
+
+  
+
+```
+
+
+"What's the typical rank for each dam?" → summary table with median rank + range
+```{r}
+
+```
+
+
+"How does a specific dam rank relative to others?" → heatmap (dams × simulations)
+```{r}
+
+```
+
