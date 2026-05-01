@@ -1,0 +1,132 @@
+---
+title: "4-30meeting"
+format: html
+---
+**DELETE THIS SCRIPT LATER**
+```{r}
+library(sf)
+library(tidyverse)
+
+world_countries <- read_sf("/capstone/netzerohydro/data/raw/World_Countries_Generalized_Shapefile")
+
+world_world_rivers_ffr <- readRDS("/capstone/netzerohydro/data/cleaned_v1/world_rivers_ffr.rds")
+
+# BasinATLAS Layers
+st_layers("/capstone/netzerohydro/data/raw/BasinATLAS_Data_v10.gdb/BasinATLAS_v10.gdb")
+
+# Load BasinATLAS_12
+basinatlas_lvl12 <- st_read("/capstone/netzerohydro/data/raw/BasinATLAS_Data_v10.gdb/BasinATLAS_v10.gdb",
+                            layer = "BasinATLAS_v10_lev12")
+
+# Load BasinATLAS_4
+basinatlas_lvl4 <- st_read("/capstone/netzerohydro/data/raw/BasinATLAS_Data_v10.gdb/BasinATLAS_v10.gdb",
+                           layer = "BasinATLAS_v10_lev04")
+```
+
+
+```{r}
+config_pfaf <- "6229"
+
+# 1. Get all Level 12 IDs inside your target Level 4 basin
+target_l12_ids <- basinatlas_lvl12 |>
+  st_drop_geometry() |>
+  dplyr::filter(
+    stringr::str_starts(
+      format(PFAF_ID, scientific = FALSE, trim = TRUE, justify = "none"),
+      config_pfaf
+    )
+  ) |>
+  dplyr::transmute(hybas_l12 = sprintf("%012.0f", as.numeric(HYBAS_ID))) |>
+  dplyr::pull(hybas_l12)
+
+# 2. FILTER RIVERS: Select reaches that are located in those Level 12 basins
+plot_rivers <- world_rivers_ffr |>
+  dplyr::mutate(hybas_l12_chr = sprintf("%012.0f", as.numeric(hybas_l12))) |>
+  dplyr::filter(hybas_l12_chr %in% target_l12_ids)
+
+# 3. FILTER BASIN: Just for the background map
+plot_basin <- basinatlas_lvl4 |>
+  dplyr::filter(stringr::str_starts(format(PFAF_ID, scientific = FALSE, trim = TRUE, justify = "none"), config_pfaf))
+
+# 4. MAP IT
+ggplot() +
+  geom_sf(data = plot_basin, fill = "#bbcde5", color = "#222222") +
+  geom_sf(data = plot_rivers, color = "#1c5d99", linewidth = 0.4) +
+   labs(title = paste("Basin Hierarchy View:", config_pfaf),
+       subtitle = paste("Main River Systems found:", length(target_l12_ids))) +
+  theme_void()
+```
+
+
+```{r}
+target_number <- 4139
+target_number %in% basinatlas_lvl4$PFAF_ID
+
+
+```
+
+Adding countries to the dam dataframe 
+```{r}
+# Prep 
+world_countries <- read_sf("/capstone/netzerohydro/data/raw/World_Countries_Generalized_Shapefile")
+
+world_countries <- st_make_valid(world_countries)
+
+results_sf <- st_make_valid(results_sf)
+results_sf <- st_transform(results_sf, st_crs(world_countries))  # EPSG",3857
+
+# join 
+country_join <- st_join(results_sf, world_countries, join= st_intersects)
+
+# Plot 
+# GGplot 
+county_map <- ggplot() +
+  geom_sf(data = country_join, aes(color = wsm_scores, 
+                                 text = paste0(
+      "<b>Dam_ID: ", dam_id, "</b><br>", 
+      "<b>CSI: </b>", csi, "<br>", 
+      "<b>Connectivity Category: </b>", connectivity_category, "<br>", 
+      "<b>In a PA: </b>", in_protected_area, 
+      "<b>Country: </b>", COUNTRYAFF
+    ))) +
+  scale_color_gradientn(
+    colors = colorRampPalette(c("#0f31bc", "#77d613", "orange"))(100),
+    name = "WSM Scores"
+  ) +
+  #theme_minimal() + 
+  theme_void() + 
+  labs(title = "Weighted Sum Model Scores for Future Dams in Southeast Asia") + 
+  annotate(geom = "text", x = 115, y = 5, label = weight_label, size = 2, hjust = 0)
+
+wms_ggmap_interactive <- ggplotly(county_map, 
+         tooltip = "text" # inside of hover tool tip
+         )
+
+wms_ggmap_interactive
+```
+
+```{r}
+world_basins <- read_sf("/capstone/netzerohydro/data/raw/wmobb_basins_shp/wmobb_basins.shp")
+
+
+world_basins <- st_make_valid(world_basins)
+
+st_crs(world_basins) == st_crs(results_sf)
+
+results_sf <- st_make_valid(results_sf)
+results_sf <- st_transform(results_sf, st_crs(world_basins)) 
+
+# join 
+country_join <- st_join(results_sf, world_basins, join= st_intersects)
+
+tm_shape(world_basins) + 
+  tm_borders()
+
+
+world_basins <- read_sf("/capstone/netzerohydro/data/raw/wmobb_basins_shp/wmobb_basins.shp")
+world_basins <- st_make_valid(world_basins)
+country_join <- st_join(results_sf, world_basins, join= st_intersects)
+
+
+```
+

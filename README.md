@@ -15,7 +15,7 @@ This repository contains code for the MCDA models including model testing, sensi
 Descriptions of each folder and file can be viewed in the table below.
 
 | File/Folder | **Description** |
-|-----------------|-------------------------------------------------------|
+|----|----|
 | R | MCDA Weighted-Sum Model functions using both MinMax and Zscore normalization stragies. |
 | model_testing | Model validation tests across synthetic and real-world data subsets sourced from the `connectivity` repository. |
 | sensitivity_testing | Sensitivity analyses examining how dam scores (`sensitivity-testing-normalizationStrategy`) and rankings (`sensitivity-testing-RANK-normalizationStrategy`) vary across different weight configurations. |
