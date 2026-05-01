@@ -6,7 +6,7 @@
 
 ### Purpose
 
-This repository contains the implementation, testing, and sensitivity analysis for a Multi-Criteria Decision Analysis (MCDA) Weighted-Sum Model designed to evaluate the environmental impact of planned and future hydropower projects globally. The model scores and ranks proposed dam sites across multiple ecological and hydrological criteria to help identify "low-hanging fruit" — projects with minimal environmental impact that can contribute to net-zero energy targets.
+This repository contains the implementation, testing, and sensitivity analysis for a Multi-Criteria Decision Analysis (MCDA) Weighted-Sum Model designed to evaluate the environmental impact of planned and future hydropower projects globally. The model scores and ranks proposed dam sites across multiple ecological and hydrological criteria to help identify "low-hanging fruit" which are projects with minimal environmental impact that can contribute to net-zero energy targets. 
 
 ### File Structure
 
@@ -42,6 +42,8 @@ MCDA-model/
     ├── sensitivity-testing-Zscore.qmd
     └── sentivity-testing-RANK-MinMax.qmd
 ```
+
+If wondering "where do I start", look at the function documentation in the `R` folder and the `model_testing` folder for proper model use. 
 
 ### Data
 
