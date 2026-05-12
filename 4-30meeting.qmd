@@ -7,6 +7,7 @@ format: html
 library(sf)
 library(tidyverse)
 
+
 world_countries <- read_sf("/capstone/netzerohydro/data/raw/World_Countries_Generalized_Shapefile")
 
 world_world_rivers_ffr <- readRDS("/capstone/netzerohydro/data/cleaned_v1/world_rivers_ffr.rds")
@@ -21,7 +22,120 @@ basinatlas_lvl12 <- st_read("/capstone/netzerohydro/data/raw/BasinATLAS_Data_v10
 # Load BasinATLAS_4
 basinatlas_lvl4 <- st_read("/capstone/netzerohydro/data/raw/BasinATLAS_Data_v10.gdb/BasinATLAS_v10.gdb",
                            layer = "BasinATLAS_v10_lev04")
+
+
+reach <- readRDS("/capstone/netzerohydro/data/processed_data/global/reach_enriched_threshold_20km.rds")
+
+global_plot_layers <- readRDS("/capstone/netzerohydro/data/processed_data/global/global_plot_layers.rds")
+
+current <- read_sf("/capstone/netzerohydro/data/raw/GDW/GDW_v1_0.gdb")
+
+future <-  read_csv("/capstone/netzerohydro/data/raw/FHReD_2015_future_dams/FHReD_2015_future_dams_Zarfl_et_al_beta_version.csv")
+
+future <- future %>% st_as_sf(coords = c("Lon_Cleaned", "LAT_cleaned"), crs = st_crs(current))
+
+china <- read_sf("/capstone/netzerohydro/data/raw/china.json")
+
+
+
 ```
+
+```{r}
+# Check which object has the problem
+current <- sf::st_set_geometry(current, sf::st_geometry(current))  # re-encode geometry
+future  <- sf::st_set_geometry(future,  sf::st_geometry(future))
+
+# Fix column names and character columns
+fix_utf8 <- function(x) {
+  names(x) <- iconv(names(x), to = "UTF-8", sub = "")
+  char_cols <- sapply(sf::st_drop_geometry(x), is.character)
+  x[char_cols] <- lapply(x[char_cols], iconv, to = "UTF-8", sub = "")
+  x
+}
+
+current <- fix_utf8(current)
+future  <- fix_utf8(future)
+
+
+# 1. Manual vector assignment missing one value
+current$new_col <- c(1, 2, 3, ...)  # one too few
+
+# 2. Logical index built from a different object
+current[some_vector, ]  # some_vector has 71 elements, current has 72 rows
+
+# 3. Join/merge that silently dropped a row earlier
+# Check your row counts:
+nrow(current)
+nrow(future)
+```
+
+
+```{r}
+current <- st_make_valid(current)
+future <- st_make_valid(future)
+
+st_crs(current) == st_crs(future)
+
+st_crs(global_plot_layers$global_dams_sf) == st_crs(current)
+
+tmap_mode("view")
+
+tm_shape(global_plot_layers$global_dams_sf) + 
+  tm_dots()
+  
+library(tmap)
+
+# EVERYTHING (minus future dams)
+tm_shape(global_plot_layers$global_edges_sf) + 
+  tm_lines(fill_alpha = 0.2)+ 
+  tm_shape(current) + 
+  tm_dots(fill = "red", fill_alpha = 0.2) + 
+  tm_shape(global_plot_layers$global_dams_sf) + 
+  tm_dots(fill = "lightblue", fill_alpha = 0.2)
+
+# FUTURE RIVERS 
+tm_shape(future) +
+  tm_dots(fill = "blue", fill_alpha = 0.2) 
+  
+
+# HYDRO RIVERS 
+rivers <- st_union(global_plot_layers$global_edges_sf)
+tm_shape(rivers) + 
+  tm_lines(fill_alpha = 0.2)
+
+
+
+tm_shape(all_dams) + tm_dots()
+tm_shape(future) + tm_dots()
+
+
+
+
+# SAVING STUFF 
+
+write_csv(global_plot_layers$global_dams_sf, file = '/capstone/netzerohydro/data/processed_data/send_to_raf.csv')
+
+
+write_csv(future, file = '/capstone/netzerohydro/data/processed_data/future_raw.csv')
+write_csv(current, file = '/capstone/netzerohydro/data/processed_data/current_raw.csv')
+write_csv(global_plot_layers$global_edges_sf, file = '/capstone/netzerohydro/data/processed_data/snapped_rivers_v1.csv')
+
+
+
+write_csv(global_plot_layers$global_dams_sf, file = '/capstone/netzerohydro/data/processed_data/send_to_raf.csv')
+
+write_sf(global_plot_layers$global_dams_sf, dsn = '/capstone/netzerohydro/data/processed_data/snapped_dams_v1.shp')
+
+write_sf(global_plot_layers$global_edges_sf, dsn = '/capstone/netzerohydro/data/processed_data/snapped_rivers_v1.shp')
+
+
+write_sf(future, dsn = '/capstone/netzerohydro/data/processed_data/future_raw.shp')
+write_sf(current, dsn = '/capstone/netzerohydro/data/processed_data/current_raw.shp')
+global_plot_layers$global_edges_sf
+```
+
+
+
 
 
 ```{r}
@@ -126,6 +240,7 @@ tm_shape(world_basins) +
 world_basins <- read_sf("/capstone/netzerohydro/data/raw/wmobb_basins_shp/wmobb_basins.shp")
 world_basins <- st_make_valid(world_basins)
 country_join <- st_join(results_sf, world_basins, join= st_intersects)
+
 
 
 ```

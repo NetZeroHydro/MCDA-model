@@ -70,9 +70,9 @@ wsm_model_MinMax <- function(dataset, criteria, criteria_weights, criteria_type)
   # Apply the benfical and nonbenfical functions to the correct criteria  
   for (i in names(criteria_type)) {
     if (criteria_type[[i]] == "beneficial") {
-      dataset_filter[[i]] <- zscore_ben(dataset_filter[[i]])
+      dataset_filter[[i]] <- min_max_ben(dataset_filter[[i]])
     } else {
-      dataset_filter[[i]] <- zscore_NONben(dataset_filter[[i]])
+      dataset_filter[[i]] <- min_max_NONben(dataset_filter[[i]])
     }
   }
   
