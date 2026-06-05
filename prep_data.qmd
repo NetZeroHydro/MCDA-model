@@ -3,17 +3,60 @@ title: "prep_data"
 format: html
 ---
 
-Load data 
+This script preprocesses the dam dataframe output from the Connectivity repository by merging the protected area datasets and applying one-hot encoding to categorical variables, preparing the data for input into the Multi-Criteria Decision Model across all future dam scenarios.
+
+Load data - Dam and protected area data
 ```{r}
-# From the connectivity repository 
+library(tidyverse)
+library(dplyr)
+library(sf)
 
+# From the connectivity repository workflow
+out_enriched <- readRDS('/capstone/netzerohydro/data/out_enriched/out_enriched_v1.rds')
 
-# From protected area repository 
+# From protected area repository workflow
+protected_area <- read_csv("/capstone/netzerohydro/data/cleaned_v1/pa_future_dam_global.csv") %>% 
+  mutate(dam_id = paste0("FHRED_", dam_id)) %>% # dam_id column needs to match the out_enriched dam_id column 
+  select(-c(geometry)) 
+  # st_drop_geometry()
 
 ```
 
+## (1) Merge dam and protected area data sets
+
 Add protected area data to each Future dam 
 ```{r}
+# Merge datasets by dam_id 
+out_enriched_pa <- out_enriched %>%
+  left_join(protected_area, by = "dam_id")
+```
 
+## (2) Make MCDA criteria numeric 
+
+The Multi-Criteria Decision Model is a mathematical model that requires all criteria must be numeric. 
+Therefore, all categorical data must be converted into numbers. Specifically, the connectivity categories must be converted to numbers where the largest number is the most suitable (best) outcome and the smallest number is the least preferred outcome. 
+
+```{r}
+# Change connectivity categories to numeric 
+out_enriched_pa <- out_enriched_pa %>%
+  mutate(connectivity_category_num  = case_when(
+    connectivity_category == "cascade_classic" ~ 6, # Most suitable 
+    connectivity_category == "cascade1" ~ 5,
+    connectivity_category == "cascade2+" ~ 4,
+    connectivity_category == "has_downstream_dam" ~ 3,  
+    connectivity_category == "has_upstream_dam" ~ 3,
+    connectivity_category == "undammed" ~ 1, # Least suitable 
+    TRUE ~ 1
+    ))
+  # If you add any other categorical predictors to the model, you can mutate the columns here 
+
+  # PA was converted into binary in the fatal-flaw workflow. Therefore, code below is not necessary. 
+  # %>% mutate(in_pa_num = ifelse(in_protected_area == FALSE, 1, 0)) # 1 = no PA (good for dam placement), 0 = in PA (bad for dam placement)
+```
+
+Save the dataframe as it is used in the model and sensitivity testing scripts 
+```{r}
+# Save merged dataframe in a data folder as it is use in the rest of this repo 
+# saveRDS(object = out_enriched_pa, file = here::here("data", "out_enriched_v1.rds"))
 ```
 

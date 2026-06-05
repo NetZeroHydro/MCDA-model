@@ -113,7 +113,7 @@ Scores are between models are very similar. Consistently, FFR scores the worst a
 
 **Load data**
 
-This data is from running the connectivity repository workflow with GDW and FRHeD datasets. 
+This data is from (1) running the connectivity repository workflow with GDW and FRHeD datasets, (2) getting the Protected area dataset from the fatal-flaw repository (3) Merging the two in the `prep_data.qmd` in this repository. 
 
 ```{r}
 out_enriched <- readRDS(here::here("data", "out_enriched_v1.rds"))
