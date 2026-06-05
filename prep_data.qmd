@@ -1,0 +1,19 @@
+---
+title: "prep_data"
+format: html
+---
+
+Load data 
+```{r}
+# From the connectivity repository 
+
+
+# From protected area repository 
+
+```
+
+Add protected area data to each Future dam 
+```{r}
+
+```
+

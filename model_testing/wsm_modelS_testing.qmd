@@ -3,10 +3,16 @@ title: "wsm_modelS_testing"
 format: html
 ---
 
+This quarto document runs the MDCA functions over a fake dataset and the hydropower dataset produced by the analysis with some additional data visualizations.  
+
+Load Libraries
 ```{r}
 #| output: false 
-source(here::here("wsm_model_zscore.R"))
-source(here::here("wsm_model_MinMax.R"))
+# The functions 
+source(here::here('R', "wsm_model_zscore.R"))
+source(here::here('R', "wsm_model_MinMax.R"))
+
+# The packages 
 library(dplyr)
 library(tidyverse)
 library(sf)
@@ -17,7 +23,7 @@ library(tidyr)
 
 ## Fake dataset
 
-Building a fake dataset that I can predict the outcomes
+Building a fake dataset in which I can predict the outcomes.
 
 ```{r}
 dam_df <- data.frame(
@@ -32,8 +38,7 @@ dam_df <- data.frame(
   in_protected_area = c(0,1,1,0,0,1,1,1,0,0) # CHANGED to have 1 = good (no PA) and 0 = bad (inside PA)... WAS c(1,0,0,1,1,0,0,0,1,1) 
 )
 
-
-# upsteam, downstream, cascade 
+# Adding upsteam, downstream, cascade classifications 
 dam_df <- dam_df %>% 
   mutate(connectivity_category = case_when(
     min_distance_upstream_km <= 15 & min_distance_downstream_km <= 15 ~ "cascade", 
@@ -57,11 +62,9 @@ dam_df <- dam_df %>%
     ))
 
 
-dam_df
-
 ```
 
-Trying function on fake data
+Running the functions on fake data
 
 ```{r}
 
@@ -82,12 +85,13 @@ wsm_Zscore_results <-  wsm_model_zscore(dataset = dam_df,
                                         criteria = criteria, 
                                         criteria_weights = criteria_weights, 
                                         criteria_type = criteria_type)
+
 ```
 
-Show results with a boxplot
+Show results of MCDA Min-Max and Z-scores with a boxplot - score distribution per connectivity category.
 
 ```{r}
-
+# Box plots 
 wsm_MinMax_results %>% 
   ggplot() + 
   geom_boxplot(aes(x = wsm_scores, y = connectivity_category)) + 
@@ -103,65 +107,30 @@ wsm_Zscore_results %>%
 
 ```
 
-The main difference is the X-axis ranges.
+Scores are between models are very similar. Consistently, FFR scores the worst and Casacades score the best in the fake dataset. Min-Max normalization ranges the score from [0,1]. The MCDA Z-score range beyond [0,1]. 
 
-## Trying real Dataset
+## Trying With Real Dataset 
 
-**Data used:** Dam connectivity of the Mekong Basin.
+**Load data**
 
--   `conn_v3` is from Connectivity repo's `function_testing_v3.qmd`. Before running `function_testing_v3.qmd`, need to run net_with_dams_from_rivernetwork.
-
--   `protected_areas` from the protected Area repo.
+This data is from running the connectivity repository workflow with GDW and FRHeD datasets. 
 
 ```{r}
-# Load data 
-reach_df <- conn_v3$reach_df # From `function_testing_v3.qmd` 
-protected_areas <- readRDS('../../../../../capstone/netzerohydro/data/cleaned_v1/protected_area_draft.rds')
-
-# Add Protected areas 
-protected_areas$dam_id <- as.character(protected_areas$dam_id) # Fix dam_id 
-reach_df <- reach_df %>% separate_wider_delim(dam_id, "_", names = c("dam_dataset", "dam_id")) # Seperate dam_id column to match the pa 
-reach_df_pa <- left_join(reach_df, protected_areas, by = 'dam_id') # Join PA with dam data 
-
-# Add CSI 
-# Join river-edge attributes by bb_id.
-mekong_dams_final <- add_ffr_attr(
-  out$net_with_dams,
-  reach_df_pa,
-  edge_attr_cols = c("csi", "ord_stra", "bas_name"),
-  future_extra   = future_dams %>%
-  dplyr::mutate(dam_id = as.character(.data$dam_id)) %>%
-  dplyr::select(dam_id, capacity_mw, project_name)
-)
+out_enriched <- readRDS(here::here("data", "out_enriched_v1.rds"))
 ```
 
+Run the model using set weights 
 ```{r}
-mekong_dams_final <- mekong_dams_final %>% 
-  mutate(connectivity_category_num = case_when(
-    connectivity_category == "cascade_classic" ~ 7, 
-    connectivity_category == "cascade1" ~ 6,
-    connectivity_category == "cascade2" ~ 5, 
-    connectivity_category == "upstream" ~ 3,
-    connectivity_category == "downstream" ~ 3,
-    connectivity_category == "FFR" ~ 1,
-  )) %>% 
-  mutate(in_pa_num = ifelse(in_protected_area == FALSE, 1, 0))  # 1 = No in PA (good)
-  #st_drop_geometry() 
-```
-
-Run models
-
-```{r}
-
 criteria <- c('csi', 'connectivity_category_num', 'in_pa_num')
 
+# Can choose other weights if desired 
 criteria_weights <- c(csi = 0.4, connectivity_category_num = 0.5, in_pa_num = 0.1)
 
 criteria_type <- c(csi = "nonbeneficial", # Lower number = better 
                        connectivity_category_num = "beneficial", # Higher number = better 
                        in_pa_num = "beneficial")
 
-
+# Run functions 
 wsm_MinMax_results2 <- wsm_model_MinMax(dataset = mekong_dams_final, 
      criteria = criteria, 
      criteria_weights = criteria_weights, 
@@ -174,10 +143,29 @@ wsm_Zscore_results2 <- wsm_model_zscore(dataset = mekong_dams_final,
 
 ```
 
-Show results with a boxplot
 
+Make catagory a factor and add color palette 
 ```{r}
+# Factor the connectivity_category to get a specific order 
+wsm_MinMax_results2$connectivity_category <- factor(wsm_MinMax_results2$connectivity_category, levels = c('cascade_classic', 'cascade1', 'cascade2', 'has_downstream_dam', 'has_upstream_dam', "FFR"))
+wsm_Zscore_results2$connectivity_category <- factor(wsm_Zscore_results2$connectivity_category, levels = c('cascade_classic', 'cascade1', 'cascade2', 'has_downstream_dam', 'has_upstream_dam', "FFR"))
 
+# Create a color palettes 
+connectivity_cat_pal <- c("cascade_classic" = "#0e5faf",
+                          "cascade1" = "#67A9CF",
+                          "cascade2+" = "#D1E5F0",
+                          "has_downstream_dam" = "#f7d35d",
+                          "has_upstream_dam" = "#EF8A62", 
+                          "undammed" = "#B2182B")
+
+
+```
+
+### Look at results with... 
+
+A) Boxplots
+```{r}
+# Boxplots 
 wsm_MinMax_results2 %>% 
   ggplot() + 
   geom_boxplot(aes(x = wsm_scores, y = connectivity_category)) + 
@@ -192,21 +180,10 @@ wsm_Zscore_results2 %>%
 
 ```
 
+
+B) Histogram 
 ```{r}
-# Factor the connectivity_category to get a specific order 
-wsm_MinMax_results2$connectivity_category <- factor(wsm_MinMax_results2$connectivity_category, levels = c('cascade_classic', 'cascade1', 'cascade2', 'upstream', 'downstream', "FFR"))
-wsm_Zscore_results2$connectivity_category <- factor(wsm_Zscore_results2$connectivity_category, levels = c('cascade_classic', 'cascade1', 'cascade2', 'upstream', 'downstream', "FFR"))
-
-# Create a color paletes 
-connectivity_cat_pal <- c("cascade_classic" = "#003800",
-                          "cascade1" = "#1cbf3a",
-                          "cascade2" = "#b7ffd7",
-                          "upstream" = "#ffe500",
-                          "downstream" = "#f99b2f",
-                          "FFR" = "#c13000")
-
-
-# Histogram 
+# Histogram for MCDA Min Max results 
 wsm_MinMax_results2 %>% 
   #filter(connectivity_category == "cascade") %>% 
   ggplot() +
@@ -219,7 +196,7 @@ wsm_MinMax_results2 %>%
        fill = "Connectivity Catagory") 
 
 
-# Histogram 
+# Histogram for MCDA Z score results 
 wsm_Zscore_results2 %>% 
   #filter(connectivity_category == "cascade") %>% 
   ggplot() +
@@ -229,11 +206,11 @@ wsm_Zscore_results2 %>%
   labs(title = "Zscore WSM Scrores", 
        x = "WSM Scores", 
        y = "Count", 
-       fill = "Connectivity Catagory") 
-
+       fill = "Connectivity Catagory")  
 ```
 
-Look at results with a table wsm_Zscore_results2 does not have letters
+
+C) Table 
 
 ```{r}
 # Table
@@ -251,10 +228,10 @@ wsm_MinMax_results2 %>%
 
 ```
 
-Look at results with a map
+D) Interactive Map 
 
+For MCDA MinMax results 
 ```{r}
-
 # Make it sf and 
 wsm_MinMax_results2_sf <- st_as_sf(wsm_MinMax_results2, crs = 4326)
 
@@ -266,7 +243,7 @@ wsm_MinMax_results2_sf <- st_set_crs(wsm_MinMax_results2_sf, 4326)
 # Plot 
 # GGplot 
 wsm_MinMax_ggmap <- ggplot() +
-  geom_sf(data = east_as_basin_sf, fill = NA, color = "black", alpha = 0.5) +
+  #geom_sf(data = east_as_basin_sf, fill = NA, color = "black", alpha = 0.5) + # Adding basin
   geom_sf(data = wsm_MinMax_results2_sf, aes(color = wsm_scores, 
                                  text = paste0(
       "<b>Dam_ID: ", dam_id, "</b><br>", 
@@ -290,6 +267,7 @@ wsm_MinMax_ggmap_interactive <- ggplotly(wsm_MinMax_ggmap ,
 wsm_MinMax_ggmap_interactive
 ```
 
+For MCDA Zscore results 
 ```{r}
 # Make it sf and 
 wsm_Zscore_results2_sf <- st_as_sf(wsm_Zscore_results2, crs = 4326)
@@ -302,7 +280,7 @@ wsm_Zscore_results2_sf <- st_set_crs(wsm_Zscore_results2_sf, 4326)
 # Plot 
 # GGplot 
 wsm_Zscore_ggmap <- ggplot() +
-  geom_sf(data = east_as_basin_sf, fill = NA, color = "black", alpha = 0.5) +
+  # geom_sf(data = east_as_basin_sf, fill = NA, color = "black", alpha = 0.5) + # Adding basin
   geom_sf(data = wsm_Zscore_results2_sf, aes(color = wsm_scores, 
                                  text = paste0(
       "<b>Dam_ID: ", dam_id, "</b><br>", 
@@ -319,9 +297,11 @@ wsm_Zscore_ggmap <- ggplot() +
   theme_void() + 
   labs(title = "Weighted Sum Model Scores for Future Dams in Southeast Asia")
 
+
 wsm_Zscore_ggmap_interactive <- ggplotly(wsm_Zscore_ggmap , 
          tooltip = "text" # inside of hover tool tip
          )
 
 wsm_Zscore_ggmap_interactive
 ```
+

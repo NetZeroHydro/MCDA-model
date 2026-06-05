@@ -1,6 +1,6 @@
 # Apply the benfical and nonbenfical functions to the correct criteria  
 # =============================================================================
-# wsm_model.R
+# wsm_model_MinMax.R
 # =============================================================================
 # Purpose: The Weighted Sum Model (WSM) uses given weights and criteria to evaluate the best decisions for each row. 
 #
@@ -39,7 +39,7 @@
 #'   dataset = future_dams,
 #'   criteria = c("csi", "n_protected_areas", "distance_downstream"),
 #'   criteria_weights = c(csi = 0.5, n_protected_areas = 0.3, distance_downstream = 0.2),
-#'   criteria_type = list(csi = "beneficial", n_protected_areas = "non-beneficial",
+#'   criteria_type = list(csi = "beneficial", n_protected_areas = "nonbeneficial",
 #'                        distance_downstream = "beneficial")
 #' )
 
@@ -55,7 +55,7 @@ wsm_model_MinMax <- function(dataset, criteria, criteria_weights, criteria_type)
   
   # ---- Min-Max Normalize data ---- 
   
-  # Beneficial and Non beneficial functions
+  # Beneficial and Nonbeneficial functions
   min_max_ben <- function(x) {
     norm = (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
     return(norm)
@@ -78,9 +78,13 @@ wsm_model_MinMax <- function(dataset, criteria, criteria_weights, criteria_type)
   
   #---- Calculate weighted sum scores --- 
   #wsm_scores <- rowSums(criteria_weights * dataset_filter) # dataset_filter might NOT align with criteria_weights
-  wsm_scores <- rowSums(mapply(function(col, w) # iterating over each column (c) of dataset_filter & its corresponding weight
-    col * w, dataset_filter, # multiply column & its matching weight 
-    criteria_weights[names(dataset_filter)])) # reorders the weights vectors to match dataset_filter order, so everything get multi correctly
+  # wsm_scores <- rowSums(mapply(function(col, w) # iterating over each column (c) of dataset_filter & its corresponding weight
+  #   col * w, dataset_filter, # multiply column & its matching weight 
+  #   criteria_weights[names(dataset_filter)])) # reorders the weights vectors to match dataset_filter order, so everything get multi correctly
+  
+  wsm_scores <- rowSums(
+    sweep(as.matrix(dataset_filter), 2, criteria_weights[names(dataset_filter)], `*`)
+  )
   
   # Add scores to dataset 
   dataset$wsm_scores <- wsm_scores
@@ -107,8 +111,6 @@ wsm_model_MinMax <- function(dataset, criteria, criteria_weights, criteria_type)
   #     )
   #   ) %>% 
   #   select(!quartile) # Remove this column 
-  
-  # return the dataset 
   
   return(dataset)
   
