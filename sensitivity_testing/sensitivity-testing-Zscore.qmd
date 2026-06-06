@@ -8,7 +8,8 @@ format: html
 ```{r}
 #| output: false 
 # Function 
-source(here::here("R", "wsm_model_zscore.R"))
+#source(here::here("R", "wsm_model_zscore.R"))
+
 # Libraries 
 library(dplyr)
 library(tidyverse)
@@ -22,16 +23,19 @@ library(plotly)
 This data is from running the `connectivity repository` workflow with GDW and FRHeD datasets.
 
 ```{r}
-out_enriched <- readRDS(here::here("data", "out_enriched_v1.rds"))
-str(out_enriched)
+# Load the out_enriched_pa from the `prep_data.qmd` repo 
+out_enriched <- out_enriched_pa 
+# out_enriched <- readRDS(here::here("data", "out_enriched_v1.rds")) %>% filter(dam_type == "future") # If saved it as suggested in the `prep_data.qmd`
 
-# Filter for threshold of 100 and just future dams 
-out_enriched_future<- out_enriched %>% filter(dam_type == 'future') #%>% filter(threshold_k == '100') %>% filter(dam_type == 'future')
+# Filter for just future dams 
+out_enriched_future <- out_enriched %>% 
+  filter(dam_type == 'future') %>% 
+  st_drop_geometry()
+  #%>% filter(threshold_k == '100') # Can filter for specific threshold
 
-# Filter for specific columns for sensitrivity testing 
-# Do not need to filter for critiera  numeric columns normally 
+# Filter for specific columns 
 dataset_filter <- out_enriched_future %>% 
-  select(csi, connectivity_category_num, in_pa_num) %>% 
+  select(csi, connectivity_category_num, n_protected_areas) %>% 
   st_drop_geometry() %>% 
   mutate(across(everything(), as.numeric))
 ```
@@ -44,7 +48,7 @@ Think of it like randomly throwing 2 points on a line from 0 to 1 (for 3 criteri
 #| output: false 
 n_simulations <- 200
 
-criteria <- c('csi', 'connectivity_category_num', 'in_pa_num') # This is for the function
+criteria <- c('csi', 'connectivity_category_num', 'n_protected_areas') # This is for the function
 
 n_criteria <- length(criteria)
 
@@ -72,7 +76,7 @@ weight_samples_list <- lapply(1:nrow(weight_samples), # Create list from 1 to # 
 criteria_type <- list(
   csi = "nonbeneficial",
   connectivity_category_num = "beneficial",
-  in_pa_num = "beneficial"
+  n_protected_areas = "beneficial"
 )
 
 score_results <- map(weight_samples_list, \(w) {
@@ -184,7 +188,7 @@ Looking at average scoring results per each category of connectivity.
 # Filter for dams criteria with low sensitivity  
 score_low_sensitivity <- left_join(score_summary, out_enriched_future, by = "dam_id") %>% 
   filter(range < 0.5) %>% 
-  select(dam_id, threshold_k.x, mean_score, sd_score, range, connectivity_category, connectivity_category_num, csi, in_pa_num) %>% 
+  select(dam_id, threshold_k.x, mean_score, sd_score, range, connectivity_category, connectivity_category_num, csi, n_protected_areas) %>% 
   rename(threshold_k = threshold_k.x)
 
 # Low sensitive Dams 

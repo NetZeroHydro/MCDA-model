@@ -49,9 +49,11 @@ wsm_model_MinMax <- function(dataset, criteria, criteria_weights, criteria_type)
   # Validate weights 
   if (abs(sum(criteria_weights) - 1) > 1e-9) {stop("Criteria weights must sum to 1.")}
   #if (abs(sum(criteria_weights) != 1)) {stop("Criteria weights must sum to 1.")}
+
   
   # --- Filter for columns inputted as criteria --- 
-  dataset_filter <- dataset %>% select(any_of(criteria))
+  dataset_filter <- as.data.frame(dataset) %>% 
+    select(any_of(criteria))
   
   # ---- Min-Max Normalize data ---- 
   

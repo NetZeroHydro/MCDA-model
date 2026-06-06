@@ -1,5 +1,5 @@
 # =============================================================================
-# wsm_model.R
+# wsm_model_zscore.R
 # =============================================================================
 # Purpose: The Weighted Sum Model (WSM) uses given weights and criteria to evaluate the best decisions for each row. 
 #
@@ -50,7 +50,8 @@ wsm_model_zscore <- function(dataset, criteria, criteria_weights, criteria_type)
   #if (abs(sum(criteria_weights) != 1)) {stop("Criteria weights must sum to 1.")}
   
   # --- Filter for columns inputted as criteria --- 
-  dataset_filter <- dataset %>% select(any_of(criteria))
+  dataset_filter <- as.data.frame(dataset) %>% 
+    select(any_of(criteria))
   
   # ---- Min-Max Normalize data ---- 
   

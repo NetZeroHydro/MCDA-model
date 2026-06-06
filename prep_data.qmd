@@ -5,19 +5,23 @@ format: html
 
 This script preprocesses the dam dataframe output from the Connectivity repository by merging the protected area datasets and applying one-hot encoding to categorical variables, preparing the data for input into the Multi-Criteria Decision Model across all future dam scenarios.
 
-Load data - Dam and protected area data
 ```{r}
+# Libraries
 library(tidyverse)
 library(dplyr)
-library(sf)
+```
 
+Load data - Dam and protected area data
+```{r}
 # From the connectivity repository workflow
-out_enriched <- readRDS('/capstone/netzerohydro/data/out_enriched/out_enriched_v1.rds')
+out_enriched <- readRDS('/capstone/netzerohydro/data/out_enriched/out_enriched_v1.rds') 
+out_enriched <- out_enriched[, c(1:17,21, 25:29)]
+
 
 # From protected area repository workflow
 protected_area <- read_csv("/capstone/netzerohydro/data/cleaned_v1/pa_future_dam_global.csv") %>% 
   mutate(dam_id = paste0("FHRED_", dam_id)) %>% # dam_id column needs to match the out_enriched dam_id column 
-  select(-c(geometry)) 
+  select(-c(geometry))
   # st_drop_geometry()
 
 ```
@@ -27,9 +31,9 @@ protected_area <- read_csv("/capstone/netzerohydro/data/cleaned_v1/pa_future_dam
 Add protected area data to each Future dam 
 ```{r}
 # Merge datasets by dam_id 
-out_enriched_pa <- out_enriched %>%
-  left_join(protected_area, by = "dam_id")
+out_enriched_pa <- left_join(out_enriched, protected_area, by = "dam_id")
 ```
+
 
 ## (2) Make MCDA criteria numeric 
 

@@ -9,8 +9,8 @@ Load Libraries
 ```{r}
 #| output: false 
 # The functions 
-source(here::here('R', "wsm_model_zscore.R"))
-source(here::here('R', "wsm_model_MinMax.R"))
+#source(here::here('R', "wsm_model_zscore.R"))
+#source(here::here('R', "wsm_model_MinMax.R"))
 
 # The packages 
 library(dplyr)
@@ -19,6 +19,8 @@ library(sf)
 library(ggplot2)
 library(plotly)
 library(tidyr)
+library(leaflet)
+library(leaflet.extras)
 ```
 
 ## Fake dataset
@@ -116,27 +118,30 @@ Scores are between models are very similar. Consistently, FFR scores the worst a
 This data is from (1) running the connectivity repository workflow with GDW and FRHeD datasets, (2) getting the Protected area dataset from the fatal-flaw repository (3) Merging the two in the `prep_data.qmd` in this repository. 
 
 ```{r}
-out_enriched <- readRDS(here::here("data", "out_enriched_v1.rds"))
+# out_enriched_pa from the `prep_data.qmd` repo 
+out_enriched <- out_enriched_pa %>% filter(dam_type == "future")
+
+# out_enriched <- readRDS(here::here("data", "out_enriched_v1.rds")) %>% filter(dam_type == "future") # If saved it as suggested in the `prep_data.qmd`
 ```
 
 Run the model using set weights 
 ```{r}
-criteria <- c('csi', 'connectivity_category_num', 'in_pa_num')
+criteria <- c('csi', 'connectivity_category_num', 'n_protected_areas')
 
 # Can choose other weights if desired 
-criteria_weights <- c(csi = 0.4, connectivity_category_num = 0.5, in_pa_num = 0.1)
+criteria_weights <- c(csi = 0.4, connectivity_category_num = 0.5, n_protected_areas = 0.1)
 
 criteria_type <- c(csi = "nonbeneficial", # Lower number = better 
                        connectivity_category_num = "beneficial", # Higher number = better 
-                       in_pa_num = "beneficial")
+                       n_protected_areas = "beneficial")
 
 # Run functions 
-wsm_MinMax_results2 <- wsm_model_MinMax(dataset = mekong_dams_final, 
+wsm_MinMax_results2 <- wsm_model_MinMax(dataset = out_enriched, 
      criteria = criteria, 
      criteria_weights = criteria_weights, 
      criteria_type = criteria_type)
 
-wsm_Zscore_results2 <- wsm_model_zscore(dataset = mekong_dams_final, 
+wsm_Zscore_results2 <- wsm_model_zscore(dataset = out_enriched, 
      criteria = criteria, 
      criteria_weights = criteria_weights, 
      criteria_type = criteria_type)
@@ -147,8 +152,8 @@ wsm_Zscore_results2 <- wsm_model_zscore(dataset = mekong_dams_final,
 Make catagory a factor and add color palette 
 ```{r}
 # Factor the connectivity_category to get a specific order 
-wsm_MinMax_results2$connectivity_category <- factor(wsm_MinMax_results2$connectivity_category, levels = c('cascade_classic', 'cascade1', 'cascade2', 'has_downstream_dam', 'has_upstream_dam', "FFR"))
-wsm_Zscore_results2$connectivity_category <- factor(wsm_Zscore_results2$connectivity_category, levels = c('cascade_classic', 'cascade1', 'cascade2', 'has_downstream_dam', 'has_upstream_dam', "FFR"))
+wsm_MinMax_results2$connectivity_category <- factor(wsm_MinMax_results2$connectivity_category, levels = c('cascade_classic', 'cascade1', 'cascade2', 'has_downstream_dam', 'has_upstream_dam', "undammed"))
+wsm_Zscore_results2$connectivity_category <- factor(wsm_Zscore_results2$connectivity_category, levels = c('cascade_classic', 'cascade1', 'cascade2', 'has_downstream_dam', 'has_upstream_dam', "undammed"))
 
 # Create a color palettes 
 connectivity_cat_pal <- c("cascade_classic" = "#0e5faf",
@@ -190,7 +195,7 @@ wsm_MinMax_results2 %>%
   geom_histogram(aes(wsm_scores, fill = connectivity_category)) + 
   theme_light() + 
   scale_fill_manual(values = connectivity_cat_pal) +
-  labs(title = "MinMax WSM Scrores", 
+  labs(title = "MinMax WSM Scores", 
        x = "WSM Scores", 
        y = "Count", 
        fill = "Connectivity Catagory") 
@@ -215,6 +220,7 @@ C) Table
 ```{r}
 # Table
 wsm_MinMax_results2 %>% 
+  st_drop_geometry() %>% 
   group_by(score_letter) %>% 
   summarise(count = n(), 
             avg_scores = mean(wsm_scores, na.rm = TRUE), 
@@ -223,7 +229,7 @@ wsm_MinMax_results2 %>%
             median_scores = median(wsm_scores, na.rm = TRUE), 
             avg_csi = mean(csi, na.rm = TRUE)) %>% 
   kableExtra::kbl(digits = 3) %>% 
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed")) 
 
 
 ```
@@ -232,76 +238,77 @@ D) Interactive Map
 
 For MCDA MinMax results 
 ```{r}
-# Make it sf and 
-wsm_MinMax_results2_sf <- st_as_sf(wsm_MinMax_results2, crs = 4326)
+library(leaflet)
+library(leaflet.extras)
+
+# Make it sf
+wsm_MinMax_results2_sf <- st_as_sf(wsm_MinMax_results2, crs = 3857)
 
 # Check CRS 
-st_crs(wsm_MinMax_results2_sf) == st_crs(east_as_basin_sf)
-wsm_MinMax_results2_sf <- st_set_crs(wsm_MinMax_results2_sf, 4326) 
+#st_crs(wsm_MinMax_results2_sf) == st_crs(east_as_basin_sf) # Add basin 
+wsm_MinMax_results2_sf <- st_transform(wsm_MinMax_results2_sf, 4326) %>% 
+  mutate(lon = st_coordinates(.)[,1],
+         lat = st_coordinates(.)[,2])
 
 
-# Plot 
-# GGplot 
-wsm_MinMax_ggmap <- ggplot() +
-  #geom_sf(data = east_as_basin_sf, fill = NA, color = "black", alpha = 0.5) + # Adding basin
-  geom_sf(data = wsm_MinMax_results2_sf, aes(color = wsm_scores, 
-                                 text = paste0(
-      "<b>Dam_ID: ", dam_id, "</b><br>", 
-      "<b>CSI: </b>", csi, "<br>", 
-      "<b>Connectivity Category: </b>", connectivity_category_num, "<br>", 
+# Make a leaflet
+pal <- colorNumeric(
+  palette = colorRampPalette(c("#0f31bc", "#77d613", "orange"))(100),
+  domain = wsm_MinMax_results2_sf$wsm_scores
+)
+
+leaflet(wsm_MinMax_results2_sf) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~lon, lat = ~lat,
+    color = ~pal(wsm_scores),
+    radius = 5,
+    fillOpacity = 0.8,
+    popup = ~paste0(
+      "<b>Dam_ID: ", dam_id, "</b><br>",
+      "<b>CSI: </b>", csi, "<br>",
+      "<b>Connectivity Category: </b>", connectivity_category_num, "<br>",
       "<b>In a PA: </b>", in_protected_area, "<br>",
-      "<b>Capacity: </b>", capacity_mw, "mw"
-    ))) +
-  scale_color_gradientn(
-    colors = colorRampPalette(c("#0f31bc", "#77d613", "orange"))(100),
-    name = "WSM Scores"
-  ) +
-  #theme_minimal() + 
-  theme_void() + 
-  labs(title = "Weighted Sum Model Scores for Future Dams in Southeast Asia")
-
-wsm_MinMax_ggmap_interactive <- ggplotly(wsm_MinMax_ggmap , 
-         tooltip = "text" # inside of hover tool tip
-         )
-
-wsm_MinMax_ggmap_interactive
+      "<b>Capacity: </b>", capacity_mw, " mw"
+    )
+  ) %>%
+  addLegend(pal = pal, values = ~wsm_scores, title = "WSM Scores")
 ```
 
-For MCDA Zscore results 
+
 ```{r}
-# Make it sf and 
-wsm_Zscore_results2_sf <- st_as_sf(wsm_Zscore_results2, crs = 4326)
+# Make it sf
+wsm_Zscore_results2_sf <- st_as_sf(wsm_Zscore_results2, crs = 3857)
 
 # Check CRS 
-st_crs(wsm_Zscore_results2_sf) == st_crs(east_as_basin_sf)
-wsm_Zscore_results2_sf <- st_set_crs(wsm_Zscore_results2_sf, 4326) 
+#st_crs(wsm_MinMax_results2_sf) == st_crs(east_as_basin_sf) # Add basin 
+wsm_Zscore_results2_sf <- st_transform(wsm_Zscore_results2_sf, 4326)  %>% 
+  mutate(lon = st_coordinates(.)[,1],
+         lat = st_coordinates(.)[,2])
 
 
-# Plot 
-# GGplot 
-wsm_Zscore_ggmap <- ggplot() +
-  # geom_sf(data = east_as_basin_sf, fill = NA, color = "black", alpha = 0.5) + # Adding basin
-  geom_sf(data = wsm_Zscore_results2_sf, aes(color = wsm_scores, 
-                                 text = paste0(
-      "<b>Dam_ID: ", dam_id, "</b><br>", 
-      "<b>CSI: </b>", csi, "<br>", 
-      "<b>Connectivity Category: </b>", connectivity_category_num, "<br>", 
+# Map with a leaflet
+pal <- colorNumeric(
+  palette = colorRampPalette(c("#0f31bc", "#77d613", "orange"))(100),
+  domain = wsm_Zscore_results2_sf$wsm_scores
+)
+
+leaflet(wsm_Zscore_results2_sf) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~lon, lat = ~lat,
+    color = ~pal(wsm_scores),
+    radius = 5,
+    fillOpacity = 0.8,
+    popup = ~paste0(
+      "<b>Dam_ID: ", dam_id, "</b><br>",
+      "<b>CSI: </b>", csi, "<br>",
+      "<b>Connectivity Category: </b>", connectivity_category_num, "<br>",
       "<b>In a PA: </b>", in_protected_area, "<br>",
-      "<b>Capacity: </b>", capacity_mw, "mw"
-    ))) +
-  scale_color_gradientn(
-    colors = colorRampPalette(c("#0f31bc", "#77d613", "orange"))(100),
-    name = "WSM Scores"
-  ) +
-  #theme_minimal() + 
-  theme_void() + 
-  labs(title = "Weighted Sum Model Scores for Future Dams in Southeast Asia")
-
-
-wsm_Zscore_ggmap_interactive <- ggplotly(wsm_Zscore_ggmap , 
-         tooltip = "text" # inside of hover tool tip
-         )
-
-wsm_Zscore_ggmap_interactive
+      "<b>Capacity: </b>", capacity_mw, " mw"
+    )
+  ) %>%
+  addLegend(pal = pal, values = ~wsm_scores, title = "WSM Scores")
 ```
+
 
